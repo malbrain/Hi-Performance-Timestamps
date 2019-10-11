@@ -23,26 +23,24 @@
 #endif
 #endif
 
+typedef enum {
+  TSAvail = 0,      // initial unassigned TS slot
+  TSIdle,           // assigned, nothing pending
+  TSGen             // request for next TS
+} TSState;
+
 typedef union {
   uint64_t tsBits;
   struct {
     uint32_t tsSeqCnt;
     uint32_t tsEpoch;
   };
+  uint16_t tsCmd;
 } Timestamp;
-
-typedef union {
-  uint8_t align[64];
-  struct {
-    Timestamp timestamp;
-    int tsState;
-    int tsIdx;
-  };
-} TSClient;
 
 //  API
 
-void timestampInit(int tsMaxClients);
-TSClient *timestampClnt();
-void timestampQuit(TSClient *tsClient);
-uint64_t timestampNext(TSClient *tsClient);
+void timestampInit(Timestamp *tsArray, int tsMaxClients, bool tsServer);
+Timestamp *timestampClnt(Timestamp *tsArray);
+void timestampQuit(Timestamp *timestamp);
+uint64_t timestampNext(Timestamp *timestamp);
