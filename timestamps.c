@@ -12,6 +12,7 @@
 //  The server also stores the configuration parameters in local variables.
 
 #include "timestamps.h"
+#include <time.h>
 
 //  store the initialization values
 
@@ -29,10 +30,11 @@ typedef enum {
 bool tsCalcEpoch(Timestamp *tsBase) {
 time_t tod[1];
 
-  if(time(tod) <= tsBase->epoch)
+  if(time(tod) <= tsBase->tsEpoch)
     return false;
     
-  tsBase->epoch = (uint32_t)*tod;
+  tsBase->tsEpoch = (uint32_t)*tod;
+  tsBase->tsSeqCnt = 0;
   return true;
 
 }
@@ -41,7 +43,7 @@ bool tsScanReq(Timestamp *tsBase) {
 int idx = 0;
 
   while( ++idx < tsClientMax )
-    if( tsBase[idx].cmd == TSGen )
+    if( tsBase[idx].tsCmd == TSGen )
       tsBase[idx].tsBits = ++tsBase->tsBits;
       
   return true;
@@ -55,16 +57,16 @@ int cmd;
     for( cmd = 0; cmd < tsCmd; cmd++ )
       switch (cmd) {
       case tsEpoch:
-        if( (result = tsCalcEpoch(tsBase) )
+        if( (result = tsCalcEpoch(tsBase) ))
           continue;
         break;
       case tsScan:
-        if( (result = tsScanReq(tsBase) )
+        if( (result = tsScanReq(tsBase) ))
           continue;
         break;
       }
       break;
-  } while( ts );
+  } while( true );
 }
 
 //  API functions

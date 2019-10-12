@@ -44,3 +44,4 @@ void timestampInit(Timestamp *tsArray, int tsMaxClients, bool tsServer);
 Timestamp *timestampClnt(Timestamp *tsArray);
 void timestampQuit(Timestamp *timestamp);
 uint64_t timestampNext(Timestamp *timestamp);
+#endif
