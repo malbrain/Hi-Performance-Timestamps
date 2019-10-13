@@ -17,6 +17,17 @@
 //  store the initialization values
 
 int tsClientMax; 
+bool tsGo = true;
+
+//	atomic install 16 bit value
+
+static bool atomicCAS16(volatile uint16_t *dest, uint16_t comp, uint16_t value) {
+#ifdef _WIN32
+  return _InterlockedCompareExchange16(dest, value, comp) == comp;
+#else
+  return __sync_bool_compare_and_swap(dest, comp, value);
+#endif
+}
 
 //  helper functions
 
@@ -49,7 +60,9 @@ int idx = 0;
   return true;
 }
 
-void tsServer(Timestamp *tsBase) {
+//  API functions
+
+void timestampServer(Timestamp *tsBase) {
 bool result;
 int cmd;
 
@@ -66,20 +79,34 @@ int cmd;
         break;
       }
       break;
-  } while( true );
+  } while( tsGo );
 }
 
-//  API functions
-
-void timestampInit(Timestamp *tsArray, int tsMaxClients, bool tsServer) {
+void timestampInit(Timestamp *tsArray, int tsMaxClients) {
   tsClientMax = tsMaxClients;
 }
 
-Timestamp *timestampClnt(Timestamp *tsArray) {
+Timestamp *timestampClnt(Timestamp *tsBase) {
+  int idx = 0;
+
+  while (++idx < tsClientMax)
+      if (atomicCAS16(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
+		  return tsBase + idx;
+
+  return NULL;
 }
 
 void timestampQuit(Timestamp *timestamp) {
+  timestamp->tsCmd = TSAvail;
 }
 
 uint64_t timestampNext(Timestamp *timestamp) {
+
+  timestamp->tsCmd = TSGen;
+
+  while (((volatile Timestamp *)(timestamp))->tsCmd == TSAvail)
+	  pause();
+
+  return timestamp->tsBits;
 }
+

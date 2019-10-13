@@ -21,6 +21,8 @@
 #else
 #define pause() sched_yield()
 #endif
+#else
+#define pause() YieldProcessor()
 #endif
 
 typedef enum {
@@ -40,8 +42,9 @@ typedef union {
 
 //  API
 
-void timestampInit(Timestamp *tsArray, int tsMaxClients, bool tsServer);
+void timestampInit(Timestamp *tsArray, int tsMaxClients);
 Timestamp *timestampClnt(Timestamp *tsArray);
+void timestampServer(Timestamp *tsArray);
 void timestampQuit(Timestamp *timestamp);
 uint64_t timestampNext(Timestamp *timestamp);
 #endif
