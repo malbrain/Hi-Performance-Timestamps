@@ -28,11 +28,21 @@ void *clientGo(void *arg) {
 unsigned __stdcall clientGo(void *arg) {
 #endif
 TsArgs *args = arg;
-uint64_t idx;
+uint64_t idx, skipped = 0, count = 0;
 Timestamp *ts = timestampClnt(tsVector);
 
-	for (idx = 0; idx < args->count; idx++) {
-	}
+  for (idx = 0; idx < args->count; idx++) {
+	timestampNext(ts);
+#ifdef _DEBUG
+	if (ts->tsCmd > TSGen)
+      count++;
+    else
+      skipped++;
+#endif
+  }
+#ifdef _DEBUG
+  printf("client %d count = %llu skipped = %llu\n", args->idx, count, skipped);
+#endif
 #ifndef _WIN32
   return NULL;
 #else
@@ -46,10 +56,12 @@ void *serverGo(void *arg) {
 unsigned __stdcall serverGo(void *arg) {
 #endif
   TsArgs *args = arg;
-  uint64_t idx;
+  uint64_t count;
 
-  for (idx = 0; idx < args->count; idx++) {
-  }
+  count = timestampServer(tsVector);
+#ifdef _DEBUG
+	printf("server cycles = %llu\n", count);
+#endif
 #ifndef _WIN32
   return NULL;
 #else
@@ -64,15 +76,16 @@ int _cdecl main(int argc, char **argv) {
 #else
   HANDLE *threads;
 #endif
-  TsArgs args[1];
+  TsArgs *baseArgs, *args;
   int idx;
   double startx1 = getCpuTime(0);
   double startx2 = getCpuTime(1);
   double startx3 = getCpuTime(2);
   double elapsed;
 
-  if (argc > 1) 
-	  maxTS = atoi(argv[1]) + 1;
+  if (argc > 1) maxTS = atoi(argv[1]) + 1;
+
+  baseArgs = malloc(maxTS * sizeof(TsArgs));
 
   tsVector = (Timestamp *)calloc(maxTS, sizeof(Timestamp));
 
@@ -88,6 +101,7 @@ int _cdecl main(int argc, char **argv) {
   idx = 0;
 
   do {
+    args = baseArgs + idx;
     args->count = atoi(argv[2]);
     args->idx = idx;
 #ifndef _WIN32
@@ -108,8 +122,8 @@ int _cdecl main(int argc, char **argv) {
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, serverGo, args, 0, NULL)) < 0LL))
         fprintf(stderr, "Error creating thread errno = %d\n", errno);
 #endif
-
-    fprintf(stderr, "thread %d launched for %d timestamps\n", idx, atoi(argv[2]));
+	if( idx )
+		printf("thread %d launched for %d timestamps\n", idx, atoi(argv[2]));
   } while (++idx < maxTS);
 
   // 	wait for termination

@@ -47,50 +47,50 @@ time_t tod[1];
   tsBase->tsEpoch = (uint32_t)*tod;
   tsBase->tsSeqCnt = 0;
   return true;
-
 }
 
 bool tsScanReq(Timestamp *tsBase) {
 int idx = 0;
+  bool result = false;
 
-  while( ++idx < tsClientMax )
-    if( tsBase[idx].tsCmd == TSGen )
-      tsBase[idx].tsBits = ++tsBase->tsBits;
-      
-  return true;
+  while (++idx < tsClientMax)
+    if (tsBase[idx].tsCmd == TSGen)
+      tsBase[idx].tsBits = ++tsBase->tsBits, result = true;
+       
+  return result;
 }
 
 //  API functions
 
-void timestampServer(Timestamp *tsBase) {
-bool result;
-int cmd;
-
+uint64_t timestampServer(Timestamp *tsBase) {
+  uint64_t cycles = 0;
+  bool result;
+  
   do {
-    for( cmd = 0; cmd < tsCmd; cmd++ )
-      switch (cmd) {
-      case tsEpoch:
-        if( (result = tsCalcEpoch(tsBase) ))
-          continue;
-        break;
-      case tsScan:
-        if( (result = tsScanReq(tsBase) ))
-          continue;
-        break;
-      }
-      break;
-  } while( tsGo );
+    result = tsCalcEpoch(tsBase);
+
+    if ((result = tsScanReq(tsBase))) continue;
+
+    pause();
+    cycles++;
+  } while (tsGo);
+  return cycles;
 }
+
+//	tsMaxClients is the number of client slots plus one for slot zero
 
 void timestampInit(Timestamp *tsArray, int tsMaxClients) {
   tsClientMax = tsMaxClients;
+  tsArray->tsBits = 0;
+  tsCalcEpoch(tsArray);
 }
 
 Timestamp *timestampClnt(Timestamp *tsBase) {
   int idx = 0;
 
   while (++idx < tsClientMax)
-      if (atomicCAS16(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
+	if( tsBase[idx].tsCmd == TSAvail )
+	  if (atomicCAS16(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
 		  return tsBase + idx;
 
   return NULL;
@@ -104,7 +104,7 @@ uint64_t timestampNext(Timestamp *timestamp) {
 
   timestamp->tsCmd = TSGen;
 
-  while (((volatile Timestamp *)(timestamp))->tsCmd == TSAvail)
+  while (((volatile Timestamp *)(timestamp))->tsCmd == TSGen)
 	  pause();
 
   return timestamp->tsBits;

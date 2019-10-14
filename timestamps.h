@@ -37,14 +37,18 @@ typedef union {
     uint32_t tsSeqCnt;
     uint32_t tsEpoch;
   };
-  uint16_t tsCmd;
+  struct {
+    uint32_t fill1;
+    uint16_t fill2;
+    uint16_t tsCmd;
+  };
 } Timestamp;
 
 //  API
 
 void timestampInit(Timestamp *tsArray, int tsMaxClients);
 Timestamp *timestampClnt(Timestamp *tsArray);
-void timestampServer(Timestamp *tsArray);
+uint64_t timestampServer(Timestamp *tsArray);
 void timestampQuit(Timestamp *timestamp);
 uint64_t timestampNext(Timestamp *timestamp);
 #endif
