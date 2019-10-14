@@ -69,11 +69,12 @@ unsigned __stdcall serverGo(void *arg) {
 #endif
 }
 
-int _cdecl main(int argc, char **argv) {
 #ifndef _WIN32
+int main(int argc, char **argv) {
   pthread_t *threads;
   int err;
 #else
+int _cdecl main(int argc, char **argv) {
   HANDLE *threads;
 #endif
   TsArgs *baseArgs, *args;
@@ -129,7 +130,7 @@ int _cdecl main(int argc, char **argv) {
   // 	wait for termination
 
 #ifndef _WIN32
-    for (idx = 0; idx < maxTS; idx++) pthread_join(threads[idx], NULL);
+    for (idx = 1; idx < maxTS; idx++) pthread_join(threads[idx], NULL);
 #else
     WaitForMultipleObjects(maxTS - 1, threads + 1, TRUE, INFINITE);
 	tsGo = false;
@@ -148,11 +149,7 @@ int _cdecl main(int argc, char **argv) {
     elapsed = getCpuTime(2) - startx3;
     printf(" sys  %dm%.3fs\n", (int)(elapsed / 60), elapsed - (int)(elapsed / 60) * 60);
 
-#ifndef _WIN32
-    return NULL;
-#else
     return 0;
-#endif
 }
 
 #ifndef _WIN32
