@@ -1,5 +1,5 @@
 //	standalone driver file for Timestamps
-
+//	specify /D QUEUE or /D SCAN on the compile (VS19)
 #include "timestamps.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -31,7 +31,9 @@ TsArgs *args = arg;
 uint64_t idx, skipped = 0, count = 0;
 Timestamp *ts = timestampClnt(tsVector);
 
-  for (idx = 0; idx < args->count; idx++) {
+printf("Begin client %d\n", args->idx);
+
+for (idx = 0; idx < args->count; idx++) {
 	timestampNext(ts);
 #ifdef _DEBUG
 	if (ts->tsCmd > TSGen)
@@ -109,22 +111,26 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       if ((err = pthread_create(threads + idx, NULL, clientGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
-
+#ifndef ATOMIC
 	if( !idx)
       if ((err = pthread_create(threads + idx, NULL, serverGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
-
+#endif
 #else
 	if( idx )
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, clientGo, args, 0, NULL)) < 0LL))
         fprintf(stderr, "Error creating thread errno = %d\n", errno);
-
-	if( !idx )
+#ifndef ATOMIC
+    if (!idx) {
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, serverGo, args, 0, NULL)) < 0LL))
-        fprintf(stderr, "Error creating thread errno = %d\n", errno);
+          fprintf(stderr, "Error creating thread errno = %d\n", errno);
+      printf("thread %d server for %d timestamps\n", idx, (maxTS - 1) * atoi(argv[2]));
+    }
+#endif
 #endif
 	if( idx )
 		printf("thread %d launched for %d timestamps\n", idx, atoi(argv[2]));
+
   } while (++idx < maxTS);
 
   // 	wait for termination
@@ -134,11 +140,21 @@ int _cdecl main(int argc, char **argv) {
 #else
     WaitForMultipleObjects(maxTS - 1, threads + 1, TRUE, INFINITE);
 	tsGo = false;
-
+#ifndef ATOMIC
 	WaitForSingleObject(threads[0], INFINITE);
-
-    for (idx = 0; idx < maxTS; idx++)
+    CloseHandle(threads[0]);
+#endif
+    for (idx = 1; idx < maxTS; idx++)
 		CloseHandle(threads[idx]);
+#endif
+#ifdef SCAN
+    printf("Table Scan\n");
+#endif
+#ifdef QUEUE
+    printf("FIFO Queue\n");
+#endif
+#ifdef ATOMIC
+    printf("Atomic Incr\n");
 #endif
     elapsed = getCpuTime(0) - startx1;
     printf(" real %dm%.3fs\n", (int)(elapsed / 60), elapsed - (int)(elapsed / 60) * 60);

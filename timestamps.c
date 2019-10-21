@@ -16,28 +16,41 @@
 
 //  store the initialization values
 
-int tsClientMax; 
+Timestamp *tsArray;
+int tsClientMax;
 bool tsGo = true;
 
-//	atomic install 16 bit value
+//	atomic install 64 bit value
 
-static bool atomicCAS16(volatile uint16_t *dest, uint16_t comp, uint16_t value) {
+static bool atomicCAS64(volatile uint64_t *dest, uint64_t comp, uint64_t value) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange16(dest, value, comp) == comp;
+  return _InterlockedCompareExchange64(dest, value, comp) == comp;
 #else
   return __sync_bool_compare_and_swap(dest, comp, value);
 #endif
 }
 
-//  helper functions
+//	atomic 64 bit increment
 
-typedef enum {
-  tsNop,
-  tsEpoch,
-  tsScan,
-  tsCmd
-} tsSrvrCmd; 
-  
+static uint64_t atomicINC64(volatile uint64_t *dest) {
+#ifdef _WIN32
+  return _InterlockedIncrement64(dest);
+#else
+  return __sync_add_and_fetch(dest, 1);
+#endif
+}
+
+//  routine to wait
+
+bool pause(int loops) {
+  if (loops < 20) return tsGo;
+
+  pausex();
+  return tsGo;
+}
+
+  // calculate and install current epoch
+
 bool tsCalcEpoch(Timestamp *tsBase) {
 time_t tod[1];
 
@@ -49,21 +62,48 @@ time_t tod[1];
   return true;
 }
 
+// scan/queue
+
 bool tsScanReq(Timestamp *tsBase) {
-int idx = 0;
   bool result = false;
+
+#ifdef QUEUE
+  int loops = 0;
+
+  do {
+    uint64_t tsNext = tsTail + 1;
+
+	while (tsHead == tsTail)
+      if (!pause(++loops))
+		  return false;
+
+    while (tsQueue[tsNext % TSQUEUE] == NULL)
+      if (!pause(++loops))
+		  return false;
+
+	tsQueue[tsNext % TSQUEUE]->tsBits = ++tsBase->tsBits;
+    tsQueue[tsNext % TSQUEUE] = NULL;
+    tsTail = tsNext;
+
+    result = true;
+  } while (++loops < 1000 || loops < 1000000 && tsHead != tsTail );
+  
+  return result;
+#else
+  int idx = 0;
 
   while (++idx < tsClientMax)
     if (tsBase[idx].tsCmd == TSGen)
       tsBase[idx].tsBits = ++tsBase->tsBits, result = true;
        
   return result;
+#endif
 }
 
 //  API functions
 
-uint64_t timestampServer(Timestamp *tsBase) {
-  uint64_t cycles = 0;
+bool timestampServer(Timestamp *tsBase) {
+  int loops = 0;
   bool result;
   
   do {
@@ -71,42 +111,59 @@ uint64_t timestampServer(Timestamp *tsBase) {
 
     if ((result = tsScanReq(tsBase))) continue;
 
-    pause();
-    cycles++;
+    if (!pause(++loops)) return false;
   } while (tsGo);
-  return cycles;
+  return true;
 }
 
 //	tsMaxClients is the number of client slots plus one for slot zero
 
-void timestampInit(Timestamp *tsArray, int tsMaxClients) {
+void timestampInit(Timestamp *tsBase, int tsMaxClients) {
   tsClientMax = tsMaxClients;
-  tsArray->tsBits = 0;
-  tsCalcEpoch(tsArray);
+  tsBase->tsBits = 0;
+  tsCalcEpoch(tsBase);
+  tsArray = tsBase;
 }
+
+//  Client request for tsBase slot
 
 Timestamp *timestampClnt(Timestamp *tsBase) {
   int idx = 0;
 
   while (++idx < tsClientMax)
 	if( tsBase[idx].tsCmd == TSAvail )
-	  if (atomicCAS16(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
+	  if (atomicCAS64(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
 		  return tsBase + idx;
 
   return NULL;
 }
 
+//	release tsBase slot
+
 void timestampQuit(Timestamp *timestamp) {
   timestamp->tsCmd = TSAvail;
 }
 
+//  request next timestamp
+
 uint64_t timestampNext(Timestamp *timestamp) {
+#ifdef ATOMIC
+	return atomicINC64(&tsArray->tsBits);
+#endif
+#ifdef QUEUE
+  uint64_t tsNext;
 
   timestamp->tsCmd = TSGen;
+  tsNext = atomicINC64(&tsHead);
+  tsQueue[tsNext % TSQUEUE] = timestamp;
+#endif
+#ifdef SCAN
+  timestamp->tsCmd = TSGen;
+#endif
+  int loops = 0;
 
-  while (((volatile Timestamp *)(timestamp))->tsCmd == TSGen)
-	  pause();
+  while (timestamp->tsCmd == TSGen)
+    if (!pause(++loops)) return 0;
 
   return timestamp->tsBits;
 }
-

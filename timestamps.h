@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <winbase.h>
 #include <process.h>
+#include <intrin.h>
 #else
 #include <pthread.h>
 #include <sched.h>
@@ -17,18 +18,21 @@
 #ifndef _WIN32
 #ifdef apple
 #include <libkern/OSAtomic.h>
-#define pause() OSMemoryBarrier()
+#define pausex() OSMemoryBarrier()
 #else
-#define pause() sched_yield()
+#define pausex() sched_yield()
 #endif
 #else
-#define pause() YieldProcessor()
+#define pausex() YieldProcessor()
 #endif
 
+bool pause(int loops);
+bool tsGo;
+
 typedef enum {
-  TSAvail = 0,      // initial unassigned TS slot
-  TSIdle,           // assigned, nothing pending
-  TSGen             // request for next TS
+  TSAvail = 0,  // initial unassigned TS slot
+  TSIdle,       // assigned, nothing pending
+  TSGen         // request for next TS
 } TSState;
 
 typedef union {
@@ -37,18 +41,29 @@ typedef union {
     uint32_t tsSeqCnt;
     uint32_t tsEpoch;
   };
-  struct {
-    uint32_t fill1;
-    uint16_t fill2;
-    uint16_t tsCmd;
-  };
+  volatile uint64_t tsCmd;
 } Timestamp;
+
+#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC)
+#define ATOMIC
+#endif
+
+#ifdef QUEUE
+
+// circular queue of requests
+#define TSQUEUE 12
+
+uint64_t volatile tsHead;
+uint64_t tsTail;
+
+Timestamp *tsQueue[TSQUEUE];
+#endif
 
 //  API
 
 void timestampInit(Timestamp *tsArray, int tsMaxClients);
 Timestamp *timestampClnt(Timestamp *tsArray);
-uint64_t timestampServer(Timestamp *tsArray);
+bool timestampServer(Timestamp *tsArray);
 void timestampQuit(Timestamp *timestamp);
 uint64_t timestampNext(Timestamp *timestamp);
 #endif
