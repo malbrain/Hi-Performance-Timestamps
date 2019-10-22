@@ -123,6 +123,9 @@ void timestampInit(Timestamp *tsBase, int tsMaxClients) {
   tsBase->tsBits = 0;
   tsCalcEpoch(tsBase);
   tsArray = tsBase;
+#ifdef ALIGN
+  tsCache = (Timestamp *)aligned_malloc(64 * tsClientMax, 64);
+#endif
 }
 
 //  Client request for tsBase slot
@@ -149,6 +152,9 @@ void timestampQuit(Timestamp *timestamp) {
 uint64_t timestampNext(Timestamp *timestamp) {
 #ifdef ATOMIC
 	return atomicINC64(&tsArray->tsBits);
+#endif
+#ifdef ALIGN
+    return atomicINC64(&tsCache[8 * (timestamp - tsArray)].tsBits);
 #endif
 #ifdef QUEUE
   uint64_t tsNext;

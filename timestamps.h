@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <malloc.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -10,6 +11,7 @@
 #include <winbase.h>
 #include <process.h>
 #include <intrin.h>
+#define aligned_malloc _aligned_malloc
 #else
 #include <pthread.h>
 #include <sched.h>
@@ -44,8 +46,12 @@ typedef union {
   volatile uint64_t tsCmd;
 } Timestamp;
 
-#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC)
-#define ATOMIC
+#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC) && !defined(ALIGN)
+#define ALIGN
+#endif
+
+#ifdef ALIGN
+Timestamp *tsCache;
 #endif
 
 #ifdef QUEUE

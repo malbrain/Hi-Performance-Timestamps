@@ -111,7 +111,7 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       if ((err = pthread_create(threads + idx, NULL, clientGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
-#ifndef ATOMIC
+#if !!defined(ATOMIC) && !defined(ALIGN)
 	if( !idx)
       if ((err = pthread_create(threads + idx, NULL, serverGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
@@ -120,7 +120,7 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, clientGo, args, 0, NULL)) < 0LL))
         fprintf(stderr, "Error creating thread errno = %d\n", errno);
-#ifndef ATOMIC
+#if !!defined(ATOMIC) && !defined(ALIGN)
     if (!idx) {
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, serverGo, args, 0, NULL)) < 0LL))
           fprintf(stderr, "Error creating thread errno = %d\n", errno);
@@ -140,7 +140,7 @@ int _cdecl main(int argc, char **argv) {
 #else
     WaitForMultipleObjects(maxTS - 1, threads + 1, TRUE, INFINITE);
 	tsGo = false;
-#ifndef ATOMIC
+#if !!defined(ATOMIC) && !defined(ALIGN)
 	WaitForSingleObject(threads[0], INFINITE);
     CloseHandle(threads[0]);
 #endif
@@ -155,6 +155,9 @@ int _cdecl main(int argc, char **argv) {
 #endif
 #ifdef ATOMIC
     printf("Atomic Incr\n");
+#endif
+#ifdef ALIGN
+    printf("Atomic Aligned 64\n");
 #endif
     elapsed = getCpuTime(0) - startx1;
     printf(" real %dm%.3fs\n", (int)(elapsed / 60), elapsed - (int)(elapsed / 60) * 60);
