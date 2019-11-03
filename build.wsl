@@ -1,3 +1,8 @@
-gcc -std=c11 -Wall -Wshadow -Wpointer-arith -Wstrict-prototypes -D WSL -O2 -ggdb  *.c -lpthread
-./a.out 1 1000000
-./a.out 6 1000000
+gcc -std=c11 -mcx16 -D RDTSC -D WSL -O2 *.c -lpthread
+./a.out 1 1000000000
+./a.out 5 200000000
+
+gcc -std=c11 -mcx16 -D CLOCK -D WSL -O2 *.c -lpthread
+./a.out 1 1000000000
+./a.out 5 200000000
+

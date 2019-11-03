@@ -36,7 +36,7 @@ printf("Begin client %d\n", args->idx);
 for (idx = 0; idx < args->count; idx++) {
 	timestampNext(ts);
 #ifdef _DEBUG
-	if (ts->tsCmd > TSGen)
+		if (ts->tsCmd > TSGen)
       count++;
     else
       skipped++;
@@ -111,7 +111,7 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       if ((err = pthread_create(threads + idx, NULL, clientGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
-#if !!defined(ATOMIC) && !defined(ALIGN)
+#if !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
 	if( !idx)
       if ((err = pthread_create(threads + idx, NULL, serverGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
@@ -120,11 +120,12 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, clientGo, args, 0, NULL)) < 0LL))
         fprintf(stderr, "Error creating thread errno = %d\n", errno);
-#if !!defined(ATOMIC) && !defined(ALIGN)
-    if (!idx) {
+#if !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
+        if (!idx) {
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, serverGo, args, 0, NULL)) < 0LL))
           fprintf(stderr, "Error creating thread errno = %d\n", errno);
-      printf("thread %d server for %d timestamps\n", idx, (maxTS - 1) * atoi(argv[2]));
+
+	  printf("thread %d server for %d timestamps\n", idx, (maxTS - 1) * atoi(argv[2]));
     }
 #endif
 #endif
@@ -158,6 +159,12 @@ int _cdecl main(int argc, char **argv) {
 #endif
 #ifdef ALIGN
     printf("Atomic Aligned 64\n");
+#endif
+#ifdef RDTSC
+    printf("TSC COUNT\n");
+#endif
+#ifdef CLOCK
+    printf("Hi Res Timer\n");
 #endif
     elapsed = getCpuTime(0) - startx1;
     printf(" real %dm%.3fs\n", (int)(elapsed / 60), elapsed - (int)(elapsed / 60) * 60);

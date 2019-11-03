@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <malloc.h>
+#include <time.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -11,7 +12,8 @@
 #include <winbase.h>
 #include <process.h>
 #include <intrin.h>
-#define aligned_malloc _aligned_malloc
+
+#define	 aligned_malloc _aligned_malloc
 #else
 #include <pthread.h>
 #include <sched.h>
@@ -27,6 +29,16 @@
 #else
 #define pausex() YieldProcessor()
 #endif
+
+typedef union {
+  uint64_t low, hi;
+  uint64_t base, tod[1];
+#ifdef _WIN32
+  uint64_t bits[2];
+#else
+  __int128 bits[1];
+#endif
+} TsEpoch;
 
 bool pause(int loops);
 bool tsGo;
@@ -46,8 +58,8 @@ typedef union {
   volatile uint64_t tsCmd;
 } Timestamp;
 
-#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC) && !defined(ALIGN)
-#define ALIGN
+#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
+#define RDTSC
 #endif
 
 #ifdef ALIGN
