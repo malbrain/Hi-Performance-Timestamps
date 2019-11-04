@@ -1,6 +1,9 @@
 #ifndef _TIMESTAMPS_H_
 #define _TIMESTAMPS_H_
 
+#define _POSIX_C_SOURCE 199309L
+
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <malloc.h>
@@ -31,8 +34,8 @@
 #endif
 
 typedef union {
-  uint64_t low, hi;
-  uint64_t base, tod[1];
+  struct { uint64_t low, hi; };
+  struct { uint64_t base, tod[1]; };
 #ifdef _WIN32
   uint64_t bits[2];
 #else
@@ -40,7 +43,7 @@ typedef union {
 #endif
 } TsEpoch;
 
-bool pause(int loops);
+bool pausey(int loops);
 bool tsGo;
 
 typedef enum {

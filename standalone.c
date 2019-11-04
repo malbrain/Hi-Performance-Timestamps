@@ -28,23 +28,20 @@ void *clientGo(void *arg) {
 unsigned __stdcall clientGo(void *arg) {
 #endif
 TsArgs *args = arg;
-uint64_t idx, skipped = 0, count = 0;
+uint64_t idx, prev = 0, count = 0, skipped = 0;;
 Timestamp *ts = timestampClnt(tsVector);
 
 printf("Begin client %d\n", args->idx);
 
 for (idx = 0; idx < args->count; idx++) {
-	timestampNext(ts);
-#ifdef _DEBUG
-		if (ts->tsCmd > TSGen)
+	if( timestampNext(ts) > prev )
       count++;
     else
       skipped++;
-#endif
+	prev = ts->tsBits;
   }
-#ifdef _DEBUG
-  printf("client %d count = %llu skipped = %llu\n", args->idx, count, skipped);
-#endif
+
+  printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 "\n", args->idx, count, skipped);
 #ifndef _WIN32
   return NULL;
 #else

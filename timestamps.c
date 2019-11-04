@@ -23,14 +23,13 @@ bool tsGo = true;
 #include <x86intrin.h>
 #else
 #include <intrin.h>
-#include <atomic.h>
 #endif
 
 //	atomic install 64 bit value
 
 static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange64(dest, *comp, *value) == *comp;
+  return _InterlockedCompareExchange64(dest, *value, *comp) == *comp;
 }
 #else
   return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED );
@@ -60,7 +59,7 @@ bool atomicCAS128(TsEpoch *where, TsEpoch *comp, TsEpoch *repl) {
 
 //  routine to wait
 
-bool pause(int loops) {
+bool pausey(int loops) {
   if (loops < 20) return tsGo;
 
   pausex();
@@ -92,11 +91,11 @@ int loops = 0;
     uint64_t tsNext = tsTail + 1;
 
 	while (tsHead == tsTail)
-      if (!pause(++loops))
+      if (!pausey(++loops))
 		  return false;
 
     while (tsQueue[tsNext % TSQUEUE] == NULL)
-      if (!pause(++loops))
+      if (!pausey(++loops))
 		  return false;
 
 	tsQueue[tsNext % TSQUEUE]->tsBits = ++tsBase->tsBits;
@@ -130,7 +129,7 @@ bool timestampServer(Timestamp *tsBase) {
     if ((result = tsScanReq(tsBase))) continue;
 
 //
-	if (!pause(++loops)) return false;
+	if (!pausey(++loops)) return false;
   } while (tsGo);
   return true;
 }
@@ -183,8 +182,11 @@ TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
 uint64_t timestampNext(Timestamp *timestamp) {
 #ifdef CLOCK
   struct timespec spec[1];
+#ifdef _WIN32
   timespec_get(spec, TIME_UTC);
-
+#else
+  clock_gettime(CLOCK_REALTIME, spec);
+#endif
   timestamp->tsEpoch = (uint32_t)spec->tv_sec;
   timestamp->tsSeqCnt = spec->tv_nsec;
   return timestamp->tsBits;
@@ -232,7 +234,7 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
   tsQueue[tsNext % TSQUEUE] = timestamp;
 
   while( timestamp->tsCmd == TSGen)
-    if (!pause(++loops)) return 0;
+    if (!pausey(++loops)) return 0;
 
   return timestamp->tsBits;
 #endif
@@ -242,7 +244,7 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
 
   if( (tsNext = timestamp->tsBits) == TSGen )
     while( (tsNext = timestamp->tsCmd) == TSGen )
-      if (!pause(++loops)) return 0;
+      if (!pausey(++loops)) return 0;
 
   timestamp->tsBits = TSGen;
   return tsNext;
