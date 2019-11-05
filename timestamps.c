@@ -15,9 +15,16 @@
 
 //  store the initialization values
 
+uint64_t rdtscEpochs = 0;
 Timestamp *tsArray;
 int tsClientMax;
 bool tsGo = true;
+
+#ifdef _WIN32
+__declspec(align(16)) TsEpoch rdtscEpoch[1];
+#else
+TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
+#endif
 
 #ifndef _WIN32
 #include <x86intrin.h>
@@ -137,6 +144,7 @@ bool timestampServer(Timestamp *tsBase) {
 //	tsMaxClients is the number of client slots plus one for slot zero
 
 void timestampInit(Timestamp *tsBase, int tsMaxClients) {
+  memset (rdtscEpoch, 0, sizeof(TsEpoch)) ;
   tsClientMax = tsMaxClients;
   tsBase->tsBits = 0;
   tsCalcEpoch(tsBase);
@@ -173,12 +181,6 @@ void timestampQuit(Timestamp *timestamp) {
 
 //  request next timestamp
 
-#ifdef _WIN32
-__declspec(align(16)) TsEpoch rdtscEpoch[1];
-#else
-TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
-#endif
-
 uint64_t timestampNext(Timestamp *timestamp) {
 #ifdef CLOCK
   struct timespec spec[1];
@@ -199,20 +201,21 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
   TsEpoch newEpoch[1] __attribute__((__aligned__(16)));
   TsEpoch oldEpoch[1] __attribute__((__aligned__(16)));
 #endif
-  uint64_t ts, cnt;
-  time_t tod[1];
+  int64_t ts, cnt;
 
   do {
     ts = __rdtsc();
-    *oldEpoch = *rdtscEpoch;
     cnt = ts - rdtscEpoch->base;
 
-    if (cnt < 1000000000) break;
+    if (cnt > 0 && cnt < 4000000000UL) break;
+
+    oldEpoch->base = ts - cnt;
+    oldEpoch->tod[0] = rdtscEpoch->tod[0];
+	atomicINC64(&rdtscEpochs);
 
 	cnt = 0;
-    time(tod);
     newEpoch->base = ts;
-    *newEpoch->tod = *tod;
+    time(newEpoch->tod);
   } while (!atomicCAS128(rdtscEpoch, oldEpoch, newEpoch));
 
   timestamp->tsEpoch = (uint32_t)*rdtscEpoch->tod;

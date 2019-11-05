@@ -6,7 +6,8 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <malloc.h>
+#include <stdlib.h>
+#include <memory.h>
 #include <time.h>
 
 #ifdef _WIN32
@@ -34,8 +35,16 @@
 #endif
 
 typedef union {
-  struct { uint64_t low, hi; };
-  struct { uint64_t base, tod[1]; };
+  struct {
+	uint64_t low;
+	uint64_t hi;
+  };
+
+  struct {
+	uint64_t base;
+	time_t tod[1];
+  };
+
 #ifdef _WIN32
   uint64_t bits[2];
 #else

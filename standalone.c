@@ -12,6 +12,8 @@
 #endif
 
 double getCpuTime(int type);
+
+extern uint64_t rdtscEpochs;
 extern bool tsGo;
 
 typedef struct {
@@ -76,6 +78,7 @@ int main(int argc, char **argv) {
 int _cdecl main(int argc, char **argv) {
   HANDLE *threads;
 #endif
+  printf("size of Timestamp = %d, TsEpoch = %d\n", (int)sizeof(Timestamp), (int)sizeof(TsEpoch));
   TsArgs *baseArgs, *args;
   int idx;
   double startx1 = getCpuTime(0);
@@ -158,7 +161,7 @@ int _cdecl main(int argc, char **argv) {
     printf("Atomic Aligned 64\n");
 #endif
 #ifdef RDTSC
-    printf("TSC COUNT\n");
+    printf("TSC COUNT: New  Epochs = %" PRIu64 "\n", rdtscEpochs);
 #endif
 #ifdef CLOCK
     printf("Hi Res Timer\n");
