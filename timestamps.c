@@ -21,9 +21,9 @@ int tsClientMax;
 bool tsGo = true;
 
 #ifdef _WIN32
-__declspec(align(16)) TsEpoch rdtscEpoch[1];
+__declspec(align(16)) volatile TsEpoch rdtscEpoch[1];
 #else
-TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
+volatile TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
 #endif
 
 #ifndef _WIN32
@@ -55,9 +55,9 @@ static uint64_t atomicINC64(volatile uint64_t *dest) {
 
 //	atomic 128 bit compare and swap
 
-bool atomicCAS128(TsEpoch *where, TsEpoch *comp, TsEpoch *repl) {
+bool atomicCAS128(volatile TsEpoch *where, TsEpoch *comp, TsEpoch *repl) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange128(where->bits, repl->hi, repl->low, comp->bits);
+  return _InterlockedCompareExchange128(where->bitsX2, repl->hi, repl->low, comp->bitsX2);
 }
 #else
   return __atomic_compare_exchange(where->bits, comp->bits, repl->bits, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
@@ -131,11 +131,10 @@ bool timestampServer(Timestamp *tsBase) {
   bool result;
   
   do {
-//    result = tsCalcEpoch(tsBase);
+    result = tsCalcEpoch(tsBase);
 
     if ((result = tsScanReq(tsBase))) continue;
 
-//
 	if (!pausey(++loops)) return false;
   } while (tsGo);
   return true;
@@ -144,7 +143,7 @@ bool timestampServer(Timestamp *tsBase) {
 //	tsMaxClients is the number of client slots plus one for slot zero
 
 void timestampInit(Timestamp *tsBase, int tsMaxClients) {
-  memset (rdtscEpoch, 0, sizeof(TsEpoch)) ;
+  memset ((void *)rdtscEpoch, 0, sizeof(TsEpoch)) ;
   tsClientMax = tsMaxClients;
   tsBase->tsBits = 0;
   tsCalcEpoch(tsBase);
@@ -202,23 +201,44 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
   TsEpoch oldEpoch[1] __attribute__((__aligned__(16)));
 #endif
   int64_t ts, cnt;
+  time_t tod[1];
 
   do {
+	*tod = *(volatile time_t *)rdtscEpoch->tod;
     ts = __rdtsc();
     cnt = ts - rdtscEpoch->base;
 
-    if (cnt > 0 && cnt < 4000000000UL) break;
+	// Skip down to assign Timestamp from current Epoch
+
+	if( *tod == *(volatile time_t *)rdtscEpoch->tod )
+    	if (cnt > 0 && cnt < 1000000000UL) break;
+
+	//  Assign new Epoch via atomicCAS128
 
     oldEpoch->base = ts - cnt;
-    oldEpoch->tod[0] = rdtscEpoch->tod[0];
+    oldEpoch->tod[0] = tod[0];
+
+	//	Count Epochs
+
 	atomicINC64(&rdtscEpochs);
+
+	//	Does assignment rate exceed 1 Billion per second?
+	//	If so, create new epoch before its time.
+
+	if (*tod == *oldEpoch->tod)
+      tod[0]++;
+    else
+      time(tod);
 
 	cnt = 0;
     newEpoch->base = ts;
-    time(newEpoch->tod);
+    *newEpoch->tod = *tod;
+
   } while (!atomicCAS128(rdtscEpoch, oldEpoch, newEpoch));
 
-  timestamp->tsEpoch = (uint32_t)*rdtscEpoch->tod;
+  // emit assigned Timestamp.
+
+  timestamp->tsEpoch = (uint32_t)*tod;
   timestamp->tsSeqCnt = (uint32_t)cnt;
   return timestamp->tsBits;
 #endif

@@ -37,7 +37,7 @@
 typedef union {
   struct {
 	uint64_t low;
-	uint64_t hi;
+	uint64_t hi;	
   };
 
   struct {
@@ -46,7 +46,7 @@ typedef union {
   };
 
 #ifdef _WIN32
-  uint64_t bits[2];
+  uint64_t bitsX2[2];
 #else
   __int128 bits[1];
 #endif
@@ -67,7 +67,7 @@ typedef union {
     uint32_t tsSeqCnt;
     uint32_t tsEpoch;
   };
-  volatile uint64_t tsCmd;
+  uint64_t tsCmd;
 } Timestamp;
 
 #if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
