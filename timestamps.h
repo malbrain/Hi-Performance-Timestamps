@@ -8,7 +8,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <memory.h>
-#include <time.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -16,11 +15,14 @@
 #include <winbase.h>
 #include <process.h>
 #include <intrin.h>
+#include <time.h>
 
 #define	 aligned_malloc _aligned_malloc
 #else
+#include <x86intrin.h>
 #include <pthread.h>
 #include <sched.h>
+#include <time.h>
 #endif
 
 #ifndef _WIN32
@@ -51,6 +53,8 @@ typedef union {
   __int128 bits[1];
 #endif
 } TsEpoch;
+
+uint64_t rdtscUnits;
 
 bool pausey(int loops);
 bool tsGo;

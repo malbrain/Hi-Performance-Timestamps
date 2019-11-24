@@ -12,6 +12,7 @@
 //  The server also stores the configuration parameters in local variables.
 
 #include "timestamps.h"
+#include <stdio.h>
 
 //  store the initialization values
 
@@ -143,11 +144,18 @@ bool timestampServer(Timestamp *tsBase) {
 //	tsMaxClients is the number of client slots plus one for slot zero
 
 void timestampInit(Timestamp *tsBase, int tsMaxClients) {
-  memset ((void *)rdtscEpoch, 0, sizeof(TsEpoch)) ;
+#ifdef RDTSC
+struct timespec spec[1];
+#endif
   tsClientMax = tsMaxClients;
   tsBase->tsBits = 0;
   tsCalcEpoch(tsBase);
   tsArray = tsBase;
+#ifdef RDTSC
+  timespec_get(spec, TIME_UTC);
+  rdtscEpoch->tod[0] = spec->tv_sec;
+  rdtscEpoch->base = __rdtsc() - (1000000000 - spec->tv_nsec);
+#endif
 #ifdef ALIGN
   tsCache = (Timestamp *)aligned_malloc(64 * tsClientMax, 64);
 #endif
@@ -200,46 +208,60 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
   TsEpoch newEpoch[1] __attribute__((__aligned__(16)));
   TsEpoch oldEpoch[1] __attribute__((__aligned__(16)));
 #endif
-  int64_t ts, cnt;
-  time_t tod[1];
+uint32_t maxRange = 1000000000;
+struct timespec spec[1];
+uint64_t ts, range, units;
+bool once = true;
+time_t tod[1];
 
   do {
+	ts = __rdtsc();
 	*tod = *(volatile time_t *)rdtscEpoch->tod;
-    ts = __rdtsc();
-    cnt = ts - rdtscEpoch->base;
+    range = ts - rdtscEpoch->base;
+    units = range / rdtscUnits;
+
+	if (range <= rdtscUnits) 
+		units = 1, printf("range underflow\n");
 
 	// Skip down to assign Timestamp from current Epoch
+	// guard against shredded load
 
-	if( *tod == *(volatile time_t *)rdtscEpoch->tod )
-    	if (cnt > 0 && cnt < 1000000000UL) break;
+	if (*tod != *(volatile time_t *)rdtscEpoch->tod)
+        continue;
 
-	//  Assign new Epoch via atomicCAS128
+    if (units < maxRange)
+	  break;
 
-    oldEpoch->base = ts - cnt;
+	if (once) {
+      atomicINC64(&rdtscEpochs);
+      once = false;
+    }
+
+    oldEpoch->base = ts - range;
     oldEpoch->tod[0] = tod[0];
 
-	//	Count Epochs
+    timespec_get(spec, TIME_UTC);
 
-	atomicINC64(&rdtscEpochs);
+	// same epoch?
 
-	//	Does assignment rate exceed 1 Billion per second?
-	//	If so, create new epoch before its time.
-
-	if (*tod == *oldEpoch->tod)
-      tod[0]++;
+	if (spec->tv_sec == *tod)
+      maxRange = 2000000000;
     else
-      time(tod);
+      maxRange = 3000000000;
 
-	cnt = 0;
-    newEpoch->base = ts;
-    *newEpoch->tod = *tod;
+    newEpoch->base = ts - (maxRange - spec->tv_nsec);
+    newEpoch->tod[0] = spec->tv_sec;
 
-  } while (!atomicCAS128(rdtscEpoch, oldEpoch, newEpoch));
+	//  Release new Epoch via atomicCAS128
+
+    atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
+
+  } while (true);
 
   // emit assigned Timestamp.
 
   timestamp->tsEpoch = (uint32_t)*tod;
-  timestamp->tsSeqCnt = (uint32_t)cnt;
+  timestamp->tsSeqCnt = (uint32_t)units;
   return timestamp->tsBits;
 #endif
 #ifdef ATOMIC

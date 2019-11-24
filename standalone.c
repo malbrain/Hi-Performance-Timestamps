@@ -1,5 +1,5 @@
 //	standalone driver file for Timestamps
-//	specify /D QUEUE or /D SCAN on the compile (VS19)
+//	specify /D CLOCK or /D RDTSC on the compile (VS19)
 #include "timestamps.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,20 +30,22 @@ void *clientGo(void *arg) {
 unsigned __stdcall clientGo(void *arg) {
 #endif
 TsArgs *args = arg;
-uint64_t idx, prev = 0, count = 0, skipped = 0;;
+uint64_t idx, dups = 0, prev = 0, count = 0, skipped = 0;;
 Timestamp *ts = timestampClnt(tsVector);
 
 printf("Begin client %d\n", args->idx);
 
 for (idx = 0; idx < args->count; idx++) {
-	if( timestampNext(ts) > prev )
-      count++;
-    else
-      skipped++;
-	prev = ts->tsBits;
+  if (timestampNext(ts) > prev)
+    count++;
+  else if (ts->tsBits == prev)
+    dups++;
+  else
+    skipped++;
+  prev = ts->tsBits;
   }
 
-  printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 "\n", args->idx, count, skipped);
+  printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 " dups = %" PRIu64 "\n", args->idx, count, skipped, dups);
 #ifndef _WIN32
   return NULL;
 #else
@@ -80,12 +82,65 @@ int _cdecl main(int argc, char **argv) {
 #endif
   printf("size of Timestamp = %d, TsEpoch = %d\n", (int)sizeof(Timestamp), (int)sizeof(TsEpoch));
   TsArgs *baseArgs, *args;
+  uint64_t sum, first = 0, nxt = 0;
   int idx;
   double startx1 = getCpuTime(0);
   double startx2 = getCpuTime(1);
   double startx3 = getCpuTime(2);
   double elapsed;
+#ifdef CLOCK
+  struct timespec spec[1];
+  first = 0;
+  first -= __rdtsc();
 
+  for (sum = idx = 0; idx < 1000000; idx++) {
+    timespec_get(spec, TIME_UTC);
+    sum += spec->tv_nsec;
+  }
+
+  first += __rdtsc();
+  first /= 1000000;
+
+  elapsed = getCpuTime(0) - startx1;
+  startx1 = getCpuTime(0);
+  elapsed *= 1000;
+
+  printf("CLOCK UTC timespec cycles per call= %" PRIu64 " %.3f ns\n", first, elapsed);
+
+  first = 0;
+  first -= __rdtsc();
+
+  for (sum = idx = 0; idx < 1000000; idx++)
+    sum += time(NULL);
+
+  elapsed = getCpuTime(0) - startx1;
+  startx1 = getCpuTime(0);
+  elapsed *= 1000;
+
+  first += __rdtsc();
+  first /= 1000000;
+
+  printf("CLOCK time cycles per call= %" PRIu64 " %.3f ns\n", first, elapsed);
+#endif
+#ifdef RDTSC
+  struct timespec spec[1];
+  timespec_get(spec, TIME_UTC);
+  uint64_t start = spec->tv_nsec + spec->tv_sec * 1000000000, end;
+  nxt = __rdtsc();
+  first = __rdtsc() - nxt;
+
+  for (sum = idx = 0; idx < 1000000; idx++) {
+    sum -= nxt;
+    nxt = __rdtsc();
+    sum += nxt;
+  }
+
+  timespec_get(spec, TIME_UTC);
+  end = spec->tv_nsec + spec->tv_sec * 1000000000;
+  printf("RDTSC timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n",
+         (end - start)/idx, sum / idx);
+  rdtscUnits = sum / idx;
+#endif
   if (argc > 1) maxTS = atoi(argv[1]) + 1;
 
   baseArgs = malloc(maxTS * sizeof(TsArgs));
