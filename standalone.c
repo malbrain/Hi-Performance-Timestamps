@@ -125,7 +125,7 @@ int _cdecl main(int argc, char **argv) {
 #ifdef RDTSC
   struct timespec spec[1];
   timespec_get(spec, TIME_UTC);
-  uint64_t start = spec->tv_nsec + spec->tv_sec * 1000000000, end;
+  int64_t start = spec->tv_nsec + spec->tv_sec * 1000000000, end;
   nxt = __rdtsc();
   first = __rdtsc() - nxt;
 
@@ -137,9 +137,49 @@ int _cdecl main(int argc, char **argv) {
 
   timespec_get(spec, TIME_UTC);
   end = spec->tv_nsec + spec->tv_sec * 1000000000;
+
   printf("RDTSC timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n",
          (end - start)/idx, sum / idx);
   rdtscUnits = sum / idx;
+
+  timespec_get(spec, TIME_UTC);
+  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  for (sum = idx = 0; idx < 1000000; idx++) {
+    timespec_get(spec, TIME_UTC);
+    sum -= nxt;
+    nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+    sum += nxt;
+  }
+
+  printf("timespec timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n", (nxt - end) / idx, sum / idx);
+
+  timespec_get(spec, TIME_UTC);
+  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  for (idx = 0; idx < 1000000; idx++) {
+    time(&spec->tv_sec);
+  }
+
+  timespec_get(spec, TIME_UTC);
+  end = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  printf("time timing = %" PRIu64 "ns  ",
+         (end - nxt) / idx);
+#ifdef __linux__
+  timespec_get(spec, TIME_UTC);
+  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  for (idx = 0; idx < 1000000; idx++) {
+    clock_gettime(1, spec);
+  }
+
+  timespec_get(spec, TIME_UTC);
+  end = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  printf("clock_gettime timing = %" PRIu64 "ns", (end - nxt) / idx);
+#endif
+  putchar('\n');
 #endif
   if (argc > 1) maxTS = atoi(argv[1]) + 1;
 
@@ -157,6 +197,9 @@ int _cdecl main(int argc, char **argv) {
   //	fire off threads
 
   idx = 0;
+  startx1 = getCpuTime(0);
+  startx2 = getCpuTime(1);
+  startx3 = getCpuTime(2);
 
   do {
     args = baseArgs + idx;

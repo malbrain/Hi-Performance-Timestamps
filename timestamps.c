@@ -189,15 +189,20 @@ void timestampQuit(Timestamp *timestamp) {
 //  request next timestamp
 
 uint64_t timestampNext(Timestamp *timestamp) {
+  uint64_t prev = timestamp->tsBits;
 #ifdef CLOCK
   struct timespec spec[1];
+  do {
 #ifdef _WIN32
-  timespec_get(spec, TIME_UTC);
+    timespec_get(spec, TIME_UTC);
 #else
-  clock_gettime(CLOCK_REALTIME, spec);
+    clock_gettime(CLOCK_REALTIME, spec);
 #endif
-  timestamp->tsEpoch = (uint32_t)spec->tv_sec;
-  timestamp->tsSeqCnt = spec->tv_nsec;
+    timestamp->tsEpoch = (uint32_t)spec->tv_sec;
+    timestamp->tsSeqCnt = spec->tv_nsec;
+
+  } while (prev == timestamp->tsBits);
+    
   return timestamp->tsBits;
 #endif
 #ifdef RDTSC
@@ -208,31 +213,30 @@ __declspec(align(16)) TsEpoch oldEpoch[1];
   TsEpoch newEpoch[1] __attribute__((__aligned__(16)));
   TsEpoch oldEpoch[1] __attribute__((__aligned__(16)));
 #endif
+#if defined(WSL) || defined(_WIN32)
 uint32_t maxRange = 1000000000;
 struct timespec spec[1];
 uint64_t ts, range, units;
 bool once = true;
 time_t tod[1];
 
+ do {
   do {
-	ts = __rdtsc();
-	*tod = *(volatile time_t *)rdtscEpoch->tod;
+    ts = __rdtsc();
+    *tod = *(volatile time_t *)rdtscEpoch->tod;
     range = ts - rdtscEpoch->base;
     units = range / rdtscUnits;
 
-	if (range <= rdtscUnits) 
-		units = 1, printf("range underflow\n");
+    if (range <= rdtscUnits) units = 1, printf("range underflow\n");
 
-	// Skip down to assign Timestamp from current Epoch
-	// guard against shredded load
+    // Skip down to assign Timestamp from current Epoch
+    // guard against shredded load
 
-	if (*tod != *(volatile time_t *)rdtscEpoch->tod)
-        continue;
+    if (*tod != *(volatile time_t *)rdtscEpoch->tod) continue;
 
-    if (units < maxRange)
-	  break;
+    if (units < maxRange) break;
 
-	if (once) {
+    if (once) {
       atomicINC64(&rdtscEpochs);
       once = false;
     }
@@ -242,9 +246,9 @@ time_t tod[1];
 
     timespec_get(spec, TIME_UTC);
 
-	// same epoch?
+    // same epoch?
 
-	if (spec->tv_sec == *tod)
+    if (spec->tv_sec == *tod)
       maxRange = 2000000000;
     else
       maxRange = 3000000000;
@@ -252,16 +256,50 @@ time_t tod[1];
     newEpoch->base = ts - (maxRange - spec->tv_nsec);
     newEpoch->tod[0] = spec->tv_sec;
 
-	//  Release new Epoch via atomicCAS128
+    //  Release new Epoch via atomicCAS128
 
     atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
 
   } while (true);
 
+#elif defined(__linux__)
+  uint32_t maxRange = 1000000000;
+  uint64_t ts, range, units;
+  time_t tod[1];
+  bool once = true;
+
+ do {
+  do {
+    ts = __rdtsc();
+    *tod = rdtscEpoch->tod[0];
+    range = ts - rdtscEpoch->base;
+    units = range / rdtscUnits;
+
+    if (time(NULL) == *tod)
+      if (*tod == *(volatile time_t *)rdtscEpoch->tod && (units < maxRange))
+        break;
+
+    if (once) {
+      atomicINC64(&rdtscEpochs);
+      once = false;
+    }
+
+    oldEpoch->tod[0] = tod[0];
+    oldEpoch->base = ts - range;
+
+    newEpoch->base = ts;
+    newEpoch->tod[0] = time(NULL);
+
+    //  Release new Epoch via atomicCAS128
+
+    atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
+  } while (true);
+#endif
   // emit assigned Timestamp.
 
-  timestamp->tsEpoch = (uint32_t)*tod;
+  timestamp->tsEpoch = (uint32_t)tod[0];
   timestamp->tsSeqCnt = (uint32_t)units;
+ } while (timestamp->tsBits == prev); 
   return timestamp->tsBits;
 #endif
 #ifdef ATOMIC
