@@ -4,25 +4,25 @@
 #define _POSIX_C_SOURCE 199309L
 
 #include <inttypes.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdlib.h>
 #include <memory.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winbase.h>
-#include <process.h>
 #include <intrin.h>
+#include <process.h>
 #include <time.h>
+#include <winbase.h>
+#include <windows.h>
 
-#define	 aligned_malloc _aligned_malloc
+#define aligned_malloc _aligned_malloc
 #else
-#include <x86intrin.h>
 #include <pthread.h>
 #include <sched.h>
 #include <time.h>
+#include <x86intrin.h>
 #endif
 
 #ifndef _WIN32
@@ -40,15 +40,15 @@
 #define RDTSC
 #endif
 
-	typedef union {
+typedef union {
   struct {
-	uint64_t low;
-	uint64_t hi;	
+    uint64_t low;
+    uint64_t hi;
   };
 
   struct {
-	uint64_t base;
-	time_t tod[1];
+    uint64_t base;
+    time_t tod[1];
   };
 
 #ifdef _WIN32
@@ -84,9 +84,9 @@ typedef union {
 
 //  API
 
-int timestampCmp(Timestamp *ts1, Timestamp *ts2);
-void timestampInit(Timestamp *tsArray, int tsMaxClients);
-uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
-void timestampQuit(Timestamp *tsArray, uint16_t idx);
-void timestampNext(Timestamp *tsArray, uint16_t idx);
+int timestampCmp(Timestamp* ts1, Timestamp* ts2);
+void timestampInit(Timestamp* tsArray, int tsMaxClients);
+uint16_t timestampClnt(Timestamp* tsArray, int tsMaxClients);
+void timestampQuit(Timestamp* tsArray, uint16_t idx);
+void timestampNext(Timestamp* tsArray, uint16_t idx);
 #endif

@@ -1,14 +1,15 @@
 //  Hi Performance timestamp generator.
 //  Multi-process/multi-threaded clients
 //  one centralized server per machine with
-//  a mmap common data structure shared by 
+//  a mmap common data structure shared by
 //  processes
 
-//  Clients are given one of the client array slots of timestamps to communicate with the server.
-//  Client Requests for the next timestamp are made from and delivered into the assigned
-//  client array slot.
+//  Clients are given one of the client array slots of timestamps to communicate
+//  with the server. Client Requests for the next timestamp are made from and
+//  delivered into the assigned client array slot.
 
-//  The some server flavors use slot 0 to store the last timestamp assigned as the basis for the next request.
+//  The some server flavors use slot 0 to store the last timestamp assigned as
+//  the basis for the next request.
 
 #include "timestamps.h"
 #include <stdio.h>
@@ -31,19 +32,23 @@ volatile TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
 
 //	atomic install 64 bit value
 
-static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value) {
+static bool atomicCAS64(volatile uint64_t* dest,
+                        uint64_t* comp,
+                        uint64_t* value) {
 #ifdef _WIN32
   return _InterlockedCompareExchange64(dest, *value, *comp) == *comp;
 }
 #else
-  return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED );
+  return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE,
+                                   __ATOMIC_RELAXED);
 }
 #endif
 
 //	atomic install 16 bit value
 
-static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp,
-                        uint16_t *value) {
+static bool atomicCAS16(volatile uint16_t* dest,
+                        uint16_t* comp,
+                        uint16_t* value) {
 #ifdef _WIN32
   return _InterlockedCompareExchange16(dest, *value, *comp) == *comp;
 }
@@ -55,7 +60,7 @@ static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp,
 
 //	atomic 64 bit increment
 
-static uint64_t atomicINC64(volatile uint64_t *dest) {
+static uint64_t atomicINC64(volatile uint64_t* dest) {
 #ifdef _WIN32
   return _InterlockedIncrement64(dest);
 #else
@@ -65,19 +70,22 @@ static uint64_t atomicINC64(volatile uint64_t *dest) {
 
 //	atomic 128 bit compare and swap
 
-bool atomicCAS128(volatile TsEpoch *where, TsEpoch *comp, TsEpoch *repl) {
+bool atomicCAS128(volatile TsEpoch* where, TsEpoch* comp, TsEpoch* repl) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange128(where->bitsX2, repl->hi, repl->low, comp->bitsX2);
+  return _InterlockedCompareExchange128(where->bitsX2, repl->hi, repl->low,
+                                        comp->bitsX2);
 }
 #else
-  return __atomic_compare_exchange(where->bits, comp->bits, repl->bits, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+  return __atomic_compare_exchange(where->bits, comp->bits, repl->bits, false,
+                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
 #endif
 
 //  routine to wait
 
 bool pausey(int loops) {
-  if (loops < 20) return tsGo;
+  if (loops < 20)
+    return tsGo;
 
   pausex();
   return tsGo;
@@ -86,9 +94,9 @@ bool pausey(int loops) {
 //	tsMaxClients is the number of client slots plus one for slot zero
 // for flavor ALIGN, place tsBase on 64 byte alignment
 
-void timestampInit(Timestamp *tsBase, int tsMaxClients) {
+void timestampInit(Timestamp* tsBase, int tsMaxClients) {
 #ifdef RDTSC
-struct timespec spec[1];
+  struct timespec spec[1];
 #endif
 #ifdef RDTSC
   timespec_get(spec, TIME_UTC);
@@ -99,29 +107,28 @@ struct timespec spec[1];
 
 //  Client request for tsBase slot
 
-uint16_t timestampClnt(Timestamp *tsBase, int maxClient) {
-uint16_t tsAvail[1] = { TSAvail };
-uint16_t tsCMD[1] = { TSIdle };
-int idx = 0;
+uint16_t timestampClnt(Timestamp* tsBase, int maxClient) {
+  uint16_t tsAvail[1] = {TSAvail};
+  uint16_t tsCMD[1] = {TSIdle};
+  int idx = 0;
 
   while (++idx < maxClient)
-	if( tsBase[idx].tsCmd == TSAvail )
-	  if (atomicCAS16(&tsBase[idx].tsCmd, tsAvail, tsCMD)) 
-		  return idx;
+    if (tsBase[idx].tsCmd == TSAvail)
+      if (atomicCAS16(&tsBase[idx].tsCmd, tsAvail, tsCMD))
+        return idx;
 
   return 0;
 }
 
 //	release tsBase slot
 
-void timestampQuit(Timestamp *tsBase, uint16_t idx) {
-
+void timestampQuit(Timestamp* tsBase, uint16_t idx) {
   tsBase[idx].tsCmd = TSAvail;
 }
 
 //  request next timestamp
 
-void timestampNext(Timestamp *tsBase, uint16_t idx) {
+void timestampNext(Timestamp* tsBase, uint16_t idx) {
   Timestamp prev[1];
 
   prev[0].tsBits[0] = tsBase[idx].tsBits[0];
@@ -160,18 +167,21 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
   do {
     do {
       ts = __rdtsc();
-      *tod = *(volatile time_t *)rdtscEpoch->tod;
+      *tod = *(volatile time_t*)rdtscEpoch->tod;
       range = ts - rdtscEpoch->base;
       units = range / rdtscUnits;
 
-      if (range <= rdtscUnits) units = 1, printf("range underflow\n");
+      if (range <= rdtscUnits)
+        units = 1, printf("range underflow\n");
 
       // Skip down to assign Timestamp from current Epoch
       // guard against shredded load
 
-      if (*tod != *(volatile time_t *)rdtscEpoch->tod) continue;
+      if (*tod != *(volatile time_t*)rdtscEpoch->tod)
+        continue;
 
-      if (units < maxRange) break;
+      if (units < maxRange)
+        break;
 
       if (once) {
         atomicINC64(&rdtscEpochs);
@@ -213,7 +223,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
       units = range / rdtscUnits;
 
       if (time(NULL) == *tod)
-        if (*tod == *(volatile time_t *)rdtscEpoch->tod && (units < maxRange))
+        if (*tod == *(volatile time_t*)rdtscEpoch->tod && (units < maxRange))
           break;
 
       if (once) {
@@ -244,9 +254,10 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 #endif
 }
 
-int timestampCmp(Timestamp *ts1, Timestamp *ts2) {
+int timestampCmp(Timestamp* ts1, Timestamp* ts2) {
   int comp;
 
-  if ((comp = ts2->tsBits[1] - ts1->tsBits[1])) return comp;
+  if ((comp = ts2->tsBits[1] - ts1->tsBits[1]))
+    return comp;
   return ts2->tsBits[0] - ts1->tsBits[0];
 }
