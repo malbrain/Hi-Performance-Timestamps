@@ -30,41 +30,27 @@ void *clientGo(void *arg) {
 unsigned __stdcall clientGo(void *arg) {
 #endif
 TsArgs *args = arg;
-uint64_t idx, dups = 0, prev = 0, count = 0, skipped = 0;;
-Timestamp *ts = timestampClnt(tsVector);
+uint64_t idx, dups = 0, count = 0, skipped = 0;;
+uint16_t slot = timestampClnt(tsVector, maxTS);
+Timestamp prev[1] = {0, 0};
 
 printf("Begin client %d\n", args->idx);
 
 for (idx = 0; idx < args->count; idx++) {
-  if (timestampNext(ts) > prev)
+  timestampNext(tsVector, slot);
+
+  if (timestampCmp(tsVector + slot, prev) > 0)
     count++;
-  else if (ts->tsBits == prev)
+  else if (timestampCmp(tsVector + slot, prev) == 0)
     dups++;
   else
     skipped++;
-  prev = ts->tsBits;
+
+  prev->tsBits[0] = tsVector[idx].tsBits[0];
+  prev->tsBits[1] = tsVector[idx].tsBits[1];
   }
 
   printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 " dups = %" PRIu64 "\n", args->idx, count, skipped, dups);
-#ifndef _WIN32
-  return NULL;
-#else
-  return 0;
-#endif
-}
-
-#ifndef _WIN32
-void *serverGo(void *arg) {
-#else
-unsigned __stdcall serverGo(void *arg) {
-#endif
-  TsArgs *args = arg;
-  uint64_t count;
-
-  count = timestampServer(tsVector);
-#ifdef _DEBUG
-	printf("server cycles = %llu\n", count);
-#endif
 #ifndef _WIN32
   return NULL;
 #else
@@ -184,9 +170,12 @@ int _cdecl main(int argc, char **argv) {
   if (argc > 1) maxTS = atoi(argv[1]) + 1;
 
   baseArgs = malloc(maxTS * sizeof(TsArgs));
-
+#ifdef ALIGN
+  tsVector = (Timestamp *)aligned_malloc(maxTS, sizeof(Timestamp));
+  memset(tsVector, 0, maxTS * sizeof(Timestamp));
+#else
   tsVector = (Timestamp *)calloc(maxTS, sizeof(Timestamp));
-
+#endif
   timestampInit(tsVector, maxTS);
 
 #ifndef _WIN32

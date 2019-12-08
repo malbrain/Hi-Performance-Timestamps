@@ -8,8 +8,7 @@
 //  Client Requests for the next timestamp are made from and delivered into the assigned
 //  client array slot.
 
-//  The server uses slot 0 to store the last timestamp assigned as the basis for the next request.
-//  The server also stores the configuration parameters in local variables.
+//  The some server flavors use slot 0 to store the last timestamp assigned as the basis for the next request.
 
 #include "timestamps.h"
 #include <stdio.h>
@@ -17,9 +16,6 @@
 //  store the initialization values
 
 uint64_t rdtscEpochs = 0;
-Timestamp *tsArray;
-int tsClientMax;
-bool tsGo = true;
 
 #ifdef _WIN32
 __declspec(align(16)) volatile TsEpoch rdtscEpoch[1];
@@ -41,6 +37,19 @@ static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value
 }
 #else
   return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED );
+}
+#endif
+
+//	atomic install 16 bit value
+
+static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp,
+                        uint16_t *value) {
+#ifdef _WIN32
+  return _InterlockedCompareExchange16(dest, *value, *comp) == *comp;
+}
+#else
+  return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE,
+                                   __ATOMIC_RELAXED);
 }
 #endif
 
@@ -74,122 +83,49 @@ bool pausey(int loops) {
   return tsGo;
 }
 
-  // calculate and install current epoch
-
-bool tsCalcEpoch(Timestamp *tsBase) {
-time_t tod[1];
-
-  if(time(tod) <= tsBase->tsEpoch)
-    return false;
-    
-  tsBase->tsEpoch = (uint32_t)*tod;
-  tsBase->tsSeqCnt = 1;
-  return true;
-}
-
-// scan/queue
-
-bool tsScanReq(Timestamp *tsBase) {
-bool result = false;
-
-#ifdef QUEUE
-int loops = 0;
-
-  do {
-    uint64_t tsNext = tsTail + 1;
-
-	while (tsHead == tsTail)
-      if (!pausey(++loops))
-		  return false;
-
-    while (tsQueue[tsNext % TSQUEUE] == NULL)
-      if (!pausey(++loops))
-		  return false;
-
-	tsQueue[tsNext % TSQUEUE]->tsBits = ++tsBase->tsBits;
-    tsQueue[tsNext % TSQUEUE] = NULL;
-    tsTail = tsNext;
-
-    result = true;
-  } while (++loops < 1000 || loops < 1000000 && tsHead != tsTail );
-  
-  return result;
-#endif
-#ifdef SCAN
-  int idx = 0;
-
-  while (++idx < tsClientMax)
-	if( tsBase[idx].tsBits > 0 )
-	  tsBase[idx].tsBits = ++tsBase->tsBits;
-#endif
-  return true;
-}
-
-//  API functions
-
-bool timestampServer(Timestamp *tsBase) {
-  int loops = 0;
-  bool result;
-  
-  do {
-    result = tsCalcEpoch(tsBase);
-
-    if ((result = tsScanReq(tsBase))) continue;
-
-	if (!pausey(++loops)) return false;
-  } while (tsGo);
-  return true;
-}
-
 //	tsMaxClients is the number of client slots plus one for slot zero
+// for flavor ALIGN, place tsBase on 64 byte alignment
 
 void timestampInit(Timestamp *tsBase, int tsMaxClients) {
 #ifdef RDTSC
 struct timespec spec[1];
 #endif
-  tsClientMax = tsMaxClients;
-  tsBase->tsBits = 0;
-  tsCalcEpoch(tsBase);
-  tsArray = tsBase;
 #ifdef RDTSC
   timespec_get(spec, TIME_UTC);
   rdtscEpoch->tod[0] = spec->tv_sec;
   rdtscEpoch->base = __rdtsc() - (1000000000 - spec->tv_nsec);
 #endif
-#ifdef ALIGN
-  tsCache = (Timestamp *)aligned_malloc(64 * tsClientMax, 64);
-#endif
 }
 
 //  Client request for tsBase slot
 
-Timestamp *timestampClnt(Timestamp *tsBase) {
+uint16_t timestampClnt(Timestamp *tsBase, int maxClient) {
+uint16_t tsAvail[1] = { TSAvail };
+uint16_t tsCMD[1] = { TSIdle };
 int idx = 0;
-uint64_t tsAvail[1] = { TSAvail };
-#ifdef SCAN
-uint64_t tsCMD[1] = { TSGen };
-#else
-uint64_t tsCMD[1] = { TSIdle };
-#endif
 
-while (++idx < tsClientMax)
+  while (++idx < maxClient)
 	if( tsBase[idx].tsCmd == TSAvail )
-	  if (atomicCAS64(&tsBase[idx].tsCmd, tsAvail, tsCMD)) 
-		  return tsBase + idx;
+	  if (atomicCAS16(&tsBase[idx].tsCmd, tsAvail, tsCMD)) 
+		  return idx;
 
-  return NULL;
+  return 0;
 }
 
 //	release tsBase slot
 
-void timestampQuit(Timestamp *timestamp) {
-  timestamp->tsCmd = TSAvail;
+void timestampQuit(Timestamp *tsBase, uint16_t idx) {
+
+  tsBase[idx].tsCmd = TSAvail;
 }
 
 //  request next timestamp
 
-uint64_t timestampNext(Timestamp *timestamp) {
-  uint64_t prev = timestamp->tsBits;
+void timestampNext(Timestamp *tsBase, uint16_t idx) {
+  Timestamp prev[1];
+
+  prev[0].tsBits[0] = tsBase[idx].tsBits[0];
+  prev[0].tsBits[1] = tsBase[idx].tsBits[1];
 #ifdef CLOCK
   struct timespec spec[1];
   do {
@@ -198,69 +134,70 @@ uint64_t timestampNext(Timestamp *timestamp) {
 #else
     clock_gettime(CLOCK_REALTIME, spec);
 #endif
-    timestamp->tsEpoch = (uint32_t)spec->tv_sec;
-    timestamp->tsSeqCnt = spec->tv_nsec;
+    tsBase[idx].tsEpoch = spec->tv_sec;
+    tsBase[idx].tsSeqCnt = spec->tv_nsec;
+    tsBase[idx].tsIdx = idx;
 
-  } while (prev == timestamp->tsBits);
-    
-  return timestamp->tsBits;
+  } while (timestampCmp(prev, tsBase + idx));
+
+  return;
 #endif
 #ifdef RDTSC
 #ifdef _WIN32
-__declspec(align(16)) TsEpoch newEpoch[1];
-__declspec(align(16)) TsEpoch oldEpoch[1];
+  __declspec(align(16)) TsEpoch newEpoch[1];
+  __declspec(align(16)) TsEpoch oldEpoch[1];
 #else
   TsEpoch newEpoch[1] __attribute__((__aligned__(16)));
   TsEpoch oldEpoch[1] __attribute__((__aligned__(16)));
 #endif
 #if defined(WSL) || defined(_WIN32)
-uint32_t maxRange = 1000000000;
-struct timespec spec[1];
-uint64_t ts, range, units;
-bool once = true;
-time_t tod[1];
+  uint32_t maxRange = 1000000000;
+  struct timespec spec[1];
+  uint64_t ts, range, units;
+  bool once = true;
+  time_t tod[1];
 
- do {
   do {
-    ts = __rdtsc();
-    *tod = *(volatile time_t *)rdtscEpoch->tod;
-    range = ts - rdtscEpoch->base;
-    units = range / rdtscUnits;
+    do {
+      ts = __rdtsc();
+      *tod = *(volatile time_t *)rdtscEpoch->tod;
+      range = ts - rdtscEpoch->base;
+      units = range / rdtscUnits;
 
-    if (range <= rdtscUnits) units = 1, printf("range underflow\n");
+      if (range <= rdtscUnits) units = 1, printf("range underflow\n");
 
-    // Skip down to assign Timestamp from current Epoch
-    // guard against shredded load
+      // Skip down to assign Timestamp from current Epoch
+      // guard against shredded load
 
-    if (*tod != *(volatile time_t *)rdtscEpoch->tod) continue;
+      if (*tod != *(volatile time_t *)rdtscEpoch->tod) continue;
 
-    if (units < maxRange) break;
+      if (units < maxRange) break;
 
-    if (once) {
-      atomicINC64(&rdtscEpochs);
-      once = false;
-    }
+      if (once) {
+        atomicINC64(&rdtscEpochs);
+        once = false;
+      }
 
-    oldEpoch->base = ts - range;
-    oldEpoch->tod[0] = tod[0];
+      oldEpoch->base = ts - range;
+      oldEpoch->tod[0] = tod[0];
 
-    timespec_get(spec, TIME_UTC);
+      timespec_get(spec, TIME_UTC);
 
-    // same epoch?
+      // same epoch?
 
-    if (spec->tv_sec == *tod)
-      maxRange = 2000000000;
-    else
-      maxRange = 3000000000;
+      if (spec->tv_sec == *tod)
+        maxRange = 2000000000;
+      else
+        maxRange = 3000000000;
 
-    newEpoch->base = ts - (maxRange - spec->tv_nsec);
-    newEpoch->tod[0] = spec->tv_sec;
+      newEpoch->base = ts - (maxRange - spec->tv_nsec);
+      newEpoch->tod[0] = spec->tv_sec;
 
-    //  Release new Epoch via atomicCAS128
+      //  Release new Epoch via atomicCAS128
 
-    atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
+      atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
 
-  } while (true);
+    } while (true);
 
 #elif defined(__linux__)
   uint32_t maxRange = 1000000000;
@@ -268,68 +205,48 @@ time_t tod[1];
   time_t tod[1];
   bool once = true;
 
- do {
   do {
-    ts = __rdtsc();
-    *tod = rdtscEpoch->tod[0];
-    range = ts - rdtscEpoch->base;
-    units = range / rdtscUnits;
+    do {
+      ts = __rdtsc();
+      *tod = rdtscEpoch->tod[0];
+      range = ts - rdtscEpoch->base;
+      units = range / rdtscUnits;
 
-    if (time(NULL) == *tod)
-      if (*tod == *(volatile time_t *)rdtscEpoch->tod && (units < maxRange))
-        break;
+      if (time(NULL) == *tod)
+        if (*tod == *(volatile time_t *)rdtscEpoch->tod && (units < maxRange))
+          break;
 
-    if (once) {
-      atomicINC64(&rdtscEpochs);
-      once = false;
-    }
+      if (once) {
+        atomicINC64(&rdtscEpochs);
+        once = false;
+      }
 
-    oldEpoch->tod[0] = tod[0];
-    oldEpoch->base = ts - range;
+      oldEpoch->tod[0] = tod[0];
+      oldEpoch->base = ts - range;
 
-    newEpoch->base = ts;
-    newEpoch->tod[0] = time(NULL);
+      newEpoch->base = ts;
+      newEpoch->tod[0] = time(NULL);
 
-    //  Release new Epoch via atomicCAS128
+      //  Release new Epoch via atomicCAS128
 
-    atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
-  } while (true);
+      atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
+    } while (true);
 #endif
-  // emit assigned Timestamp.
+    // emit assigned Timestamp.
 
-  timestamp->tsEpoch = (uint32_t)tod[0];
-  timestamp->tsSeqCnt = (uint32_t)units;
- } while (timestamp->tsBits == prev); 
-  return timestamp->tsBits;
+    tsBase[idx].tsEpoch = tod[0];
+    tsBase[idx].tsSeqCnt = (uint32_t)units;
+  } while (timestampCmp(prev, tsBase + idx));
+  return;
 #endif
-#ifdef ATOMIC
-	return atomicINC64(&tsArray->tsBits);
+#if defined(ATOMIC) || defined(ALIGN)
+  tsBase[idx].tsBits[0] = atomicINC64(tsBase->tsBits);
 #endif
-#ifdef ALIGN
-    return atomicINC64(&tsCache[8 * (timestamp - tsArray)].tsBits);
-#endif
-#ifdef QUEUE
-  uint64_t tsNext;
-  int loops = 0;
+}
 
-  timestamp->tsBits = TSGen;
-  tsNext = atomicINC64(&tsHead);
-  tsQueue[tsNext % TSQUEUE] = timestamp;
+int timestampCmp(Timestamp *ts1, Timestamp *ts2) {
+  int comp;
 
-  while( timestamp->tsCmd == TSGen)
-    if (!pausey(++loops)) return 0;
-
-  return timestamp->tsBits;
-#endif
-#ifdef SCAN
-  uint64_t tsNext;
-  int loops = 0;
-
-  if( (tsNext = timestamp->tsBits) == TSGen )
-    while( (tsNext = timestamp->tsCmd) == TSGen )
-      if (!pausey(++loops)) return 0;
-
-  timestamp->tsBits = TSGen;
-  return tsNext;
-  #endif
+  if ((comp = ts2->tsBits[1] - ts1->tsBits[1])) return comp;
+  return ts2->tsBits[0] - ts1->tsBits[0];
 }

@@ -36,7 +36,11 @@
 #define pausex() YieldProcessor()
 #endif
 
-typedef union {
+#if !defined(ALIGN) && !defined(ATOMIC) && !defined(CLOCK) && !defined(RDTSC)
+#define RDTSC
+#endif
+
+	typedef union {
   struct {
 	uint64_t low;
 	uint64_t hi;	
@@ -63,41 +67,26 @@ typedef enum {
   TSAvail = 0,  // initial unassigned TS slot
   TSIdle,       // assigned, nothing pending
   TSGen         // request for next TS
-} TSState;
+} TSCmd;
 
 typedef union {
-  uint64_t tsBits;
+  uint64_t tsBits[2];
   struct {
+    uint16_t tsIdx;
+    uint16_t tsCmd;
     uint32_t tsSeqCnt;
-    uint32_t tsEpoch;
+    time_t tsEpoch;
   };
-  uint64_t tsCmd;
-} Timestamp;
-
-#if !defined(QUEUE) && !defined(SCAN) && !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
-#define RDTSC
-#endif
-
 #ifdef ALIGN
-Timestamp *tsCache;
+  uint8_t filler[64];
 #endif
-
-#ifdef QUEUE
-
-// circular queue of requests
-#define TSQUEUE 12
-
-uint64_t volatile tsHead;
-uint64_t tsTail;
-
-Timestamp *tsQueue[TSQUEUE];
-#endif
+} Timestamp;
 
 //  API
 
+int timestampCmp(Timestamp *ts1, Timestamp *ts2);
 void timestampInit(Timestamp *tsArray, int tsMaxClients);
-Timestamp *timestampClnt(Timestamp *tsArray);
-bool timestampServer(Timestamp *tsArray);
-void timestampQuit(Timestamp *timestamp);
-uint64_t timestampNext(Timestamp *timestamp);
+uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
+void timestampQuit(Timestamp *tsArray, uint16_t idx);
+void timestampNext(Timestamp *tsArray, uint16_t idx);
 #endif
