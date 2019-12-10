@@ -4,25 +4,25 @@
 #define _POSIX_C_SOURCE 199309L
 
 #include <inttypes.h>
-#include <memory.h>
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
+#include <memory.h>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <intrin.h>
-#include <process.h>
-#include <time.h>
-#include <winbase.h>
 #include <windows.h>
+#include <winbase.h>
+#include <process.h>
+#include <intrin.h>
+#include <time.h>
 
-#define aligned_malloc _aligned_malloc
+#define	 aligned_malloc _aligned_malloc
 #else
+#include <x86intrin.h>
 #include <pthread.h>
 #include <sched.h>
 #include <time.h>
-#include <x86intrin.h>
 #endif
 
 #ifndef _WIN32
@@ -42,13 +42,13 @@
 
 typedef union {
   struct {
-    uint64_t low;
-    uint64_t hi;
+	uint64_t low;
+	uint64_t hi;	
   };
 
   struct {
-    uint64_t base;
-    time_t tod[1];
+	uint64_t base;
+	time_t tod[1];
   };
 
 #ifdef _WIN32
@@ -77,6 +77,9 @@ typedef union {
     uint32_t tsSeqCnt;
     time_t tsEpoch;
   };
+#ifndef _WIN32
+  __int128 tsBits128;
+#endif
 #ifdef ALIGN
   uint8_t filler[64];
 #endif
@@ -84,9 +87,20 @@ typedef union {
 
 //  API
 
-int timestampCmp(Timestamp* ts1, Timestamp* ts2);
-void timestampInit(Timestamp* tsArray, int tsMaxClients);
-uint16_t timestampClnt(Timestamp* tsArray, int tsMaxClients);
-void timestampQuit(Timestamp* tsArray, uint16_t idx);
-void timestampNext(Timestamp* tsArray, uint16_t idx);
+void installTs(Timestamp *dest, Timestamp *src);
+int64_t timestampCmp(Timestamp * ts1, Timestamp * ts2);
+void timestampInit(Timestamp *tsArray, int tsMaxClients);
+uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
+void timestampQuit(Timestamp *tsArray, uint16_t idx);
+void timestampNext(Timestamp *tsArray, uint16_t idx);
+void timestampCAS(Timestamp *dest, Timestamp *src, int chk);
+
+//	intrinsic atomic machine code
+
+uint64_t atomicINC64(volatile uint64_t *dest);
+#ifdef _WIN32
+bool atomicCAS128(volatile uint64_t *what, uint64_t *comp, uint64_t *repl);
+#else
+bool atomicCAS128(volatile __int128 *what, __int128 *comp, __int128 *repl);
+#endif
 #endif
