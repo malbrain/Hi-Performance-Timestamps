@@ -39,15 +39,15 @@ printf("Begin client %d\n", args->idx);
 for (idx = 0; idx < args->count; idx++) {
   timestampNext(tsVector, slot);
 
-  if (timestampCmp(tsVector + slot, prev) > 0)
+  if (timestampCmp(tsVector + slot, prev) < 0)
     count++;
   else if (timestampCmp(tsVector + slot, prev) == 0)
     dups++;
   else
     skipped++;
 
-  prev->tsBits[0] = tsVector[idx].tsBits[0];
-  prev->tsBits[1] = tsVector[idx].tsBits[1];
+  prev->tsBits[0] = tsVector[slot].tsBits[0];
+  prev->tsBits[1] = tsVector[slot].tsBits[1];
   }
 
   printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 " dups = %" PRIu64 "\n", args->idx, count, skipped, dups);

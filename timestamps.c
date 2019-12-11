@@ -58,12 +58,12 @@ uint64_t atomicINC64(volatile uint64_t *dest) {
 //	atomic 128 bit compare and swap
 
 bool atomicCASEpoch(volatile TsEpoch *what, TsEpoch *comp, TsEpoch *repl) {
-  return atomicCAS128(what->bitsX2, repl->bitsX2, comp->bitsX2);
+  return atomicCAS128(what->bitsX2, comp->bitsX2, repl->bitsX2);
 }
 
 #ifdef _WIN32
 bool atomicCAS128(volatile uint64_t * what, uint64_t * comp, uint64_t * repl) {
-  return _InterlockedCompareExchange128(what, repl[0], repl[1], comp);
+  return _InterlockedCompareExchange128(what, repl[1], repl[0], comp);
 }
 #else
 bool atomicCAS128(volatile __int128 *what, __int128 *comp, __int128 *repl) {
@@ -231,7 +231,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
     tsBase[idx].tsEpoch = tod[0];
     tsBase[idx].tsSeqCnt = (uint32_t)units;
-  } while (timestampCmp(prev, tsBase + idx));
+  } while (timestampCmp(prev, tsBase + idx) <= 0);
   return;
 #endif
 #if defined(ATOMIC) || defined(ALIGN)
