@@ -87,7 +87,7 @@ typedef union {
 
 //  API
 
-void installTs(Timestamp *dest, Timestamp *src);
+void timestampInstall(Timestamp *dest, Timestamp *src);
 int64_t timestampCmp(Timestamp * ts1, Timestamp * ts2);
 void timestampInit(Timestamp *tsArray, int tsMaxClients);
 uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
