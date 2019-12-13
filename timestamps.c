@@ -265,7 +265,7 @@ void timestampCAS(Timestamp *dest, Timestamp *src, int chk) {
 
   //	install a timestamp value
 
-void installTs(Timestamp *dest, Timestamp *src) {
+void timestampInstall(Timestamp *dest, Timestamp *src) {
 #ifdef _WIN32
   dest->tsBits[1] = src->tsBits[1];
   dest->tsBits[0] = src->tsBits[0];
