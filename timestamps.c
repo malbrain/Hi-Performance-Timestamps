@@ -24,9 +24,9 @@ volatile TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
 
 //	atomic install 64 bit value
 
-static bool atomicCAS64(volatile uint64_t *dest, uint64_t comp, uint64_t value) {
+static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange64(dest, value, comp) == comp;
+  return _InterlockedCompareExchange64(dest, *value, *comp) == *comp;
 }
 #else
   return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED );
@@ -35,9 +35,9 @@ static bool atomicCAS64(volatile uint64_t *dest, uint64_t comp, uint64_t value) 
 
 //	atomic install 16 bit value
 
-static bool atomicCAS16(volatile uint16_t *dest, uint16_t comp, uint16_t value) {
+static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp, uint16_t *value) {
 #ifdef _WIN32
-  return _InterlockedCompareExchange16(dest, value, comp) == comp;
+  return _InterlockedCompareExchange16(dest, *value, *comp) == *comp;
 }
 #else
   return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE,
@@ -58,7 +58,11 @@ uint64_t atomicINC64(volatile uint64_t *dest) {
 //	atomic 128 bit compare and swap
 
 bool atomicCASEpoch(volatile TsEpoch *what, TsEpoch *comp, TsEpoch *repl) {
+#ifdef _WIN32
   return atomicCAS128(what->bitsX2, comp->bitsX2, repl->bitsX2);
+#else
+  return atomicCAS128(what->bits, comp->bits, repl->bits);
+#endif
 }
 
 #ifdef _WIN32
@@ -88,7 +92,7 @@ void timestampInit(Timestamp *tsBase, int tsMaxClients) {
 #ifdef RDTSC
 struct timespec spec[1];
 
-  timespec_get(spec, TIME_UTC);
+  clock_gettime(CLOCK_REALTIME, spec);
   rdtscEpoch->tod[0] = spec->tv_sec;
   rdtscEpoch->base = __rdtsc() - (1000000000ULL - spec->tv_nsec);
 #endif
@@ -97,11 +101,13 @@ struct timespec spec[1];
 //  Client request for tsBase slot
 
 uint16_t timestampClnt(Timestamp *tsBase, int maxClient) {
-int idx = 0;
+  uint16_t tsAvail[1] = {TSAvail};
+  uint16_t tsIdle[1] = {TSIdle};
+  int idx = 0;
 
   while (++idx < maxClient)
 	if( tsBase[idx].tsCmd == TSAvail )
-	  if (atomicCAS16(&tsBase[idx].tsCmd, TSAvail, TSIdle)) 
+	  if (atomicCAS16(&tsBase[idx].tsCmd, tsAvail, tsIdle)) 
 		  return idx;
 
   return 0;
@@ -124,16 +130,13 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 #ifdef CLOCK
   struct timespec spec[1];
   do {
-#ifdef _WIN32
-    timespec_get(spec, TIME_UTC);
-#else
     clock_gettime(CLOCK_REALTIME, spec);
-#endif
+
     tsBase[idx].tsEpoch = spec->tv_sec;
     tsBase[idx].tsSeqCnt = spec->tv_nsec;
     tsBase[idx].tsIdx = idx;
 
-  } while (timestampCmp(prev, tsBase + idx));
+  } while (timestampCmp(prev, tsBase + idx) == 0);
 
   return;
 #endif
@@ -176,7 +179,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
       oldEpoch->base = ts - range;
       oldEpoch->tod[0] = tod[0];
 
-      timespec_get(spec, TIME_UTC);
+      clock_gettime(CLOCK_REALTIME, spec);
 
       // same epoch?
 
@@ -272,12 +275,8 @@ void installTs(Timestamp *dest, Timestamp *src) {
 }
 
 int64_t timestampCmp(Timestamp *ts1, Timestamp *ts2) {
-#ifdef _WIN32
   int64_t comp;
 
   if ((comp = ts2->tsBits[1] - ts1->tsBits[1])) return comp;
   return ts2->tsBits[0] - ts1->tsBits[0];
-#else
-  return ts2->tsBits128[0] - ts1->tsBits128[0];
-#endif
 }

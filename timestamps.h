@@ -40,6 +40,10 @@
 #define RDTSC
 #endif
 
+#if defined(_WIN32)
+#define clock_gettime(mode, spec) (timespec_get(spec, TIME_UTC))
+#endif
+
 typedef union {
   struct {
 	uint64_t low;
@@ -78,7 +82,7 @@ typedef union {
     time_t tsEpoch;
   };
 #ifndef _WIN32
-  __int128 tsBits128;
+  __int128 tsBits128[1];
 #endif
 #ifdef ALIGN
   uint8_t filler[64];

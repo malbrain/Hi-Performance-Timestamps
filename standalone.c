@@ -48,6 +48,9 @@ for (idx = 0; idx < args->count; idx++) {
 
   prev->tsBits[0] = tsVector[slot].tsBits[0];
   prev->tsBits[1] = tsVector[slot].tsBits[1];
+#ifdef _DEBUG
+  if (idx &&    idx % 10000000 == 0) fprintf(stderr, "%d:%.9d ", args->idx, (int)idx);
+#endif  // DEBUG
   }
 
   printf("client %d count = %" PRIu64 " Out of Order = %" PRIu64 " dups = %" PRIu64 "\n", args->idx, count, skipped, dups);
@@ -66,107 +69,77 @@ int main(int argc, char **argv) {
 int _cdecl main(int argc, char **argv) {
   HANDLE *threads;
 #endif
-  printf("size of Timestamp = %d, TsEpoch = %d\n", (int)sizeof(Timestamp), (int)sizeof(TsEpoch));
+  printf("size of Timestamp = %d, TsEpoch = %d pointer = %d\n", (int)sizeof(Timestamp), (int)sizeof(TsEpoch), (int)sizeof(argv));
   TsArgs *baseArgs, *args;
-  uint64_t sum, first = 0, nxt = 0;
+  uint64_t sum = 0, first = 0, nxt = 0;
   int idx;
   double startx1 = getCpuTime(0);
   double startx2 = getCpuTime(1);
   double startx3 = getCpuTime(2);
   double elapsed;
-#ifdef CLOCK
+
   struct timespec spec[1];
-  first = 0;
-  first -= __rdtsc();
+  int64_t start, end;
 
-  for (sum = idx = 0; idx < 1000000; idx++) {
-    timespec_get(spec, TIME_UTC);
-    sum += spec->tv_nsec;
-  }
-
-  first += __rdtsc();
-  first /= 1000000;
-
-  elapsed = getCpuTime(0) - startx1;
-  startx1 = getCpuTime(0);
-  elapsed *= 1000;
-
-  printf("CLOCK UTC timespec cycles per call= %" PRIu64 " %.3f ns\n", first, elapsed);
-
-  first = 0;
-  first -= __rdtsc();
-
-  for (sum = idx = 0; idx < 1000000; idx++)
-    sum += time(NULL);
-
-  elapsed = getCpuTime(0) - startx1;
-  startx1 = getCpuTime(0);
-  elapsed *= 1000;
-
-  first += __rdtsc();
-  first /= 1000000;
-
-  printf("CLOCK time cycles per call= %" PRIu64 " %.3f ns\n", first, elapsed);
-#endif
-#ifdef RDTSC
-  struct timespec spec[1];
-  timespec_get(spec, TIME_UTC);
-  int64_t start = spec->tv_nsec + spec->tv_sec * 1000000000, end;
-  nxt = __rdtsc();
-  first = __rdtsc() - nxt;
-
-  for (sum = idx = 0; idx < 1000000; idx++) {
-    sum -= nxt;
-    nxt = __rdtsc();
-    sum += nxt;
-  }
-
-  timespec_get(spec, TIME_UTC);
-  end = spec->tv_nsec + spec->tv_sec * 1000000000;
-
-  printf("RDTSC timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n",
-         (end - start)/idx, sum / idx);
-  rdtscUnits = sum / idx;
-
-  timespec_get(spec, TIME_UTC);
-  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
-
-  for (sum = idx = 0; idx < 1000000; idx++) {
-    timespec_get(spec, TIME_UTC);
-    sum -= nxt;
-    nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
-    sum += nxt;
-  }
-
-  printf("timespec timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n", (nxt - end) / idx, sum / idx);
-
-  timespec_get(spec, TIME_UTC);
-  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+  clock_gettime(CLOCK_REALTIME, spec);
+  start = spec->tv_nsec + spec->tv_sec * 1000000000;
 
   for (idx = 0; idx < 1000000; idx++) {
     time(&spec->tv_sec);
   }
 
-  timespec_get(spec, TIME_UTC);
+  clock_gettime(CLOCK_REALTIME, spec);
   end = spec->tv_nsec + spec->tv_sec * 1000000000;
 
-  printf("time timing = %" PRIu64 "ns  ",
-         (end - nxt) / idx);
-#ifdef __linux__
-  timespec_get(spec, TIME_UTC);
-  nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+  printf("time() timing = %" PRIu64 "ns\n\n", (end - start) / idx);
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  first = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  do {
+    clock_gettime(CLOCK_REALTIME, spec);
+    nxt = spec->tv_nsec + spec->tv_sec * 1000000000;
+  } while (first == nxt);
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  start = spec->tv_nsec + spec->tv_sec * 1000000000;
 
   for (idx = 0; idx < 1000000; idx++) {
-    clock_gettime(1, spec);
+    clock_gettime(CLOCK_REALTIME, spec);
   }
 
-  timespec_get(spec, TIME_UTC);
+  clock_gettime(CLOCK_REALTIME, spec);
   end = spec->tv_nsec + spec->tv_sec * 1000000000;
 
-  printf("clock_gettime timing = %" PRIu64 "ns", (end - nxt) / idx);
-#endif
+  printf("clock_gettime() timing = %" PRIu64 "ns, resolution = %" PRIu64 "\n",
+         (end - start) / idx, nxt - first);
+
+#ifdef RDTSC
+  first = __rdtsc() + __rdtsc() + __rdtsc() + __rdtsc();
+  first /= 4;
+
+  do
+    nxt = __rdtsc();
+  while (first == nxt);
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  start = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  for (sum = idx = 0; idx < 1000000; idx++) {
+    sum += __rdtsc();
+  }
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  end = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  printf("__rdtsc() timing = %" PRIu64 "ns, first units = %" PRIu64
+         " avg units = %d\n",
+         (end - start) / idx, nxt - first, (int)(__rdtsc() - first) / idx);
+
+  rdtscUnits = nxt - first;
   putchar('\n');
 #endif
+
   if (argc > 1) maxTS = atoi(argv[1]) + 1;
 
   baseArgs = malloc(maxTS * sizeof(TsArgs));
@@ -190,7 +163,12 @@ int _cdecl main(int argc, char **argv) {
   startx2 = getCpuTime(1);
   startx3 = getCpuTime(2);
 
-  do {
+  if (maxTS <= 2) {
+    args = baseArgs;
+    args->count = atoi(argv[2]);
+    args->idx = 0;
+    clientGo(args);
+  } else  do {
     args = baseArgs + idx;
     args->count = atoi(argv[2]);
     args->idx = idx;
@@ -198,23 +176,10 @@ int _cdecl main(int argc, char **argv) {
 	if( idx )
       if ((err = pthread_create(threads + idx, NULL, clientGo, args)))
         fprintf(stderr, "Error creating thread %d\n", err);
-#if !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
-	if( !idx)
-      if ((err = pthread_create(threads + idx, NULL, serverGo, args)))
-        fprintf(stderr, "Error creating thread %d\n", err);
-#endif
 #else
-	if( idx )
+    if( idx )
       while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, clientGo, args, 0, NULL)) < 0LL))
         fprintf(stderr, "Error creating thread errno = %d\n", errno);
-#if !defined(ATOMIC) && !defined(ALIGN) && !defined(CLOCK) && !defined(RDTSC)
-        if (!idx) {
-      while (((int64_t)(threads[idx] = (HANDLE)_beginthreadex(NULL, 65536, serverGo, args, 0, NULL)) < 0LL))
-          fprintf(stderr, "Error creating thread errno = %d\n", errno);
-
-	  printf("thread %d server for %d timestamps\n", idx, (maxTS - 1) * atoi(argv[2]));
-    }
-#endif
 #endif
 	if( idx )
 		printf("thread %d launched for %d timestamps\n", idx, atoi(argv[2]));
@@ -223,24 +188,14 @@ int _cdecl main(int argc, char **argv) {
 
   // 	wait for termination
 
+  if (idx) {
 #ifndef _WIN32
     for (idx = 1; idx < maxTS; idx++) pthread_join(threads[idx], NULL);
 #else
     WaitForMultipleObjects(maxTS - 1, threads + 1, TRUE, INFINITE);
-	tsGo = false;
-#if !!defined(ATOMIC) && !defined(ALIGN)
-	WaitForSingleObject(threads[0], INFINITE);
-    CloseHandle(threads[0]);
+    for (idx = 1; idx < maxTS; idx++) CloseHandle(threads[idx]);
 #endif
-    for (idx = 1; idx < maxTS; idx++)
-		CloseHandle(threads[idx]);
-#endif
-#ifdef SCAN
-    printf("Table Scan\n");
-#endif
-#ifdef QUEUE
-    printf("FIFO Queue\n");
-#endif
+  }
 #ifdef ATOMIC
     printf("Atomic Incr\n");
 #endif
@@ -248,7 +203,7 @@ int _cdecl main(int argc, char **argv) {
     printf("Atomic Aligned 64\n");
 #endif
 #ifdef RDTSC
-    printf("TSC COUNT: New  Epochs = %" PRIu64 "\n", rdtscEpochs);
+    printf("\nTSC COUNT: New  Epochs = %" PRIu64 "\n", rdtscEpochs);
 #endif
 #ifdef CLOCK
     printf("Hi Res Timer\n");
