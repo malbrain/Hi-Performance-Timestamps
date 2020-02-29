@@ -93,7 +93,7 @@ typedef union {
 
 void timestampInstall(Timestamp *dest, Timestamp *src);
 int64_t timestampCmp(Timestamp * ts1, Timestamp * ts2);
-void timestampInit(Timestamp *tsArray, int tsMaxClients);
+uint64_t timestampInit(Timestamp *tsArray, int tsMaxClients);
 uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
 void timestampQuit(Timestamp *tsArray, uint16_t idx);
 void timestampNext(Timestamp *tsArray, uint16_t idx);
