@@ -11,10 +11,13 @@
 
 #include "timestamps.h"
 #include <stdio.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 //  store the initialization values
 
 uint64_t rdtscEpochs = 0;
+extern bool debug;
 
 #ifdef _WIN32
 __declspec(align(16)) volatile TsEpoch rdtscEpoch[1];
@@ -88,13 +91,43 @@ bool pausey(int loops) {
 //	tsMaxClients is the number of client slots plus one for slot zero
 // for flavor ALIGN, place tsBase on 64 byte alignment
 
-void timestampInit(Timestamp *tsBase, int tsMaxClients) {
+uint64_t timestampInit(Timestamp *tsBase, int tsMaxClients) {
 #ifdef RDTSC
 struct timespec spec[1];
+uint64_t sum = 0, first = 0, nxt = 0;
+int64_t start, end;
+int idx;
 
   clock_gettime(CLOCK_REALTIME, spec);
   rdtscEpoch->tod[0] = spec->tv_sec;
   rdtscEpoch->base = __rdtsc() - (1000000000ULL - spec->tv_nsec);
+
+  first = __rdtsc() + __rdtsc() + __rdtsc() + __rdtsc();
+  first /= 4;
+
+  do
+    nxt = __rdtsc();
+  while (first == nxt);
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  start = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  for (sum = idx = 0; idx < 1000000; idx++) {
+    sum += __rdtsc();
+  }
+
+  clock_gettime(CLOCK_REALTIME, spec);
+  end = spec->tv_nsec + spec->tv_sec * 1000000000;
+
+  if(debug)
+    printf("__rdtsc() timing = %" PRIu64 "ns, first units = %" PRIu64
+         " avg units = %d\n",
+         (end - start) / idx, nxt - first, (int)(__rdtsc() - first) / idx);
+
+  if(!(rdtscUnits = nxt - first))
+    rdtscUnits = 1;
+
+  return rdtscUnits;
 #endif
 }
 
@@ -251,9 +284,15 @@ void timestampCAS(Timestamp *dest, Timestamp *src, int chk) {
     cmp->tsBits[0] = dest->tsBits[0];
     cmp->tsBits[1] = dest->tsBits[1];
 
-    if (chk > 0 && cmp->tsBits[0] <= src->tsBits[0]) return;
+    if (chk < 0 ) {
+        if( cmp->tsBits[1] > src->tsBits[1]) return;
+        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] > src->tsBits[0])  return;
+    }
 
-    if (chk < 0 && cmp->tsBits[0] >= src->tsBits[0]) return;
+    if (chk > 0 ) {
+        if( cmp->tsBits[1] < src->tsBits[1]) return;
+        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] < src->tsBits[0])  return;
+    }
 
 #ifdef _WIN32
   } while (!_InterlockedCompareExchange128 (dest->tsBits, src->tsBits[1], src->tsBits[0], cmp->tsBits));
