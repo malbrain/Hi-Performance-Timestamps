@@ -19,13 +19,38 @@
 uint64_t rdtscEpochs = 0;
 extern bool debug;
 
+void timestampLock(uint8_t *latch) {
+#ifndef _WIN32
+  while (__sync_fetch_and_or(latch, 1) & 1) {
+#else
+  while (_InterlockedOr8((volatile int8_t *)latch, 1) & 1) {
+#endif
+    do
+#ifndef _WIN32
+      pause();
+#else
+      YieldProcessor();
+#endif
+    while (*latch & 1);
+  }
+}
+
+void timestampUnlock(volatile uint8_t *latch) {
+#ifdef _WIN32
+  MemoryBarrier();
+#else
+  __sync_synchronize();
+#endif
+  *latch = 0;
+}
+
 #ifdef _WIN32
 __declspec(align(16)) volatile TsEpoch rdtscEpoch[1];
 #else
 volatile TsEpoch rdtscEpoch[1] __attribute__((__aligned__(16)));
 #endif
 
-//	atomic install 64 bit value
+//	atomic install checked 64 bit value
 
 static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value) {
 #ifdef _WIN32
@@ -36,7 +61,7 @@ static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value
 }
 #endif
 
-//	atomic install 16 bit value
+//	atomic install checked 16 bit value
 
 static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp, uint16_t *value) {
 #ifdef _WIN32
@@ -58,7 +83,7 @@ uint64_t atomicINC64(volatile uint64_t *dest) {
 #endif
 }
 
-//	atomic 128 bit compare and swap
+//	atomic install checked TsEpoch value
 
 bool atomicCASEpoch(volatile TsEpoch *what, TsEpoch *comp, TsEpoch *repl) {
 #ifdef _WIN32
@@ -67,6 +92,8 @@ bool atomicCASEpoch(volatile TsEpoch *what, TsEpoch *comp, TsEpoch *repl) {
   return atomicCAS128(what->bits, comp->bits, repl->bits);
 #endif
 }
+
+//  atomic install checked 128 bit value
 
 #ifdef _WIN32
 bool atomicCAS128(volatile uint64_t * what, uint64_t * comp, uint64_t * repl) {
@@ -134,13 +161,13 @@ int idx;
 //  Client request for tsBase slot
 
 uint16_t timestampClnt(Timestamp *tsBase, int maxClient) {
-  uint16_t tsAvail[1] = {TSAvail};
-  uint16_t tsIdle[1] = {TSIdle};
+  uint8_t tsAvail[1] = {TSAvail};
+  uint8_t tsIdle[1] = {TSIdle};
   int idx = 0;
 
   while (++idx < maxClient)
 	if( tsBase[idx].tsCmd == TSAvail )
-	  if (atomicCAS16(&tsBase[idx].tsCmd, tsAvail, tsIdle)) 
+	  if (atomicCAS8(&tsBase[idx].tsCmd, tsAvail, tsIdle)) 
 		  return idx;
 
   return 0;
@@ -267,7 +294,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
     tsBase[idx].tsEpoch = tod[0];
     tsBase[idx].tsSeqCnt = (uint32_t)units;
-  } while (timestampCmp(prev, tsBase + idx) <= 0);
+  } while (timestampCmp(prev, tsBase + idx, 0, 0) <= 0);
   return;
 #endif
 #if defined(ATOMIC) || defined(ALIGN)
@@ -277,21 +304,35 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
 //	install new timestamp if > (or <) existing value
 
-void timestampCAS(Timestamp *dest, Timestamp *src, int chk) {
+void timestampCAS(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock) {
   Timestamp cmp[1];
 
+    switch (lock | 0x20) {
+    case 'l':
+      timestampLock(dest->tsLatch);
+      break;
+    case 'r':
+      timestampLock(src->tsLatch);
+      break;
+    case 'b':
+      timestampLock(dest->tsLatch);
+      timestampLock(src->tsLatch);
+      break;
+  }
   do {
-    cmp->tsBits[0] = dest->tsBits[0];
+    cmp->tsBits[0] = dest->tsBits[0] & ~1ULL;
     cmp->tsBits[1] = dest->tsBits[1];
 
-    if (chk < 0 ) {
-        if( cmp->tsBits[1] > src->tsBits[1]) return;
-        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] > src->tsBits[0])  return;
+    if (chk
+        < 0 ) {
+        if( cmp->tsBits[1] > src->tsBits[1]) break;
+      if (cmp->tsBits[1] == src->tsBits[1] && cmp->tsBits[0] > src->tsBits[0])
+        break;
     }
 
     if (chk > 0 ) {
-        if( cmp->tsBits[1] < src->tsBits[1]) return;
-        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] < src->tsBits[0])  return;
+        if( cmp->tsBits[1] < src->tsBits[1]) break;
+        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] < src->tsBits[0]) break;
     }
 
 #ifdef _WIN32
@@ -300,22 +341,92 @@ void timestampCAS(Timestamp *dest, Timestamp *src, int chk) {
   } while (!__atomic_compare_exchange(dest->tsBits128, cmp->tsBits128, src->tsBits128, false,
                                       __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE));
 #endif
+  switch (unlock | 0x20) {
+    case 'l':
+      timestampUnlock(dest->tsLatch);
+      break;
+    case 'r':
+      timestampUnlock(src->tsLatch);
+      break;
+    case 'b':
+      timestampUnlock(dest->tsLatch);
+      timestampUnlock(src->tsLatch);
+      break;
+  }
 }
 
-  //	install a timestamp value
+  //	install a timestamp value 
 
-void timestampInstall(Timestamp *dest, Timestamp *src) {
+void timestampInstall(Timestamp *dest, Timestamp *src, char lock, char unlock) {
+    switch (lock | 0x20) { 
+    case 'd':
+      timestampLock(dest->tsLatch);
+      break;
+    case 's':
+      timestampLock(src->tsLatch);
+      break;
+    case 'b':
+      timestampLock(dest->tsLatch);
+      timestampLock(src->tsLatch);
+      break;
+    }
 #ifdef _WIN32
   dest->tsBits[1] = src->tsBits[1];
   dest->tsBits[0] = src->tsBits[0];
 #else
   dest->tsBits128[0] = src->tsBits128[0];
 #endif
+  switch (unlock | 0x20) {
+    case 'd':
+      timestampUnlock(dest->tsLatch);
+      break;
+    case 's':
+      timestampUnlock(src->tsLatch);
+      break;
+    case 'b':
+      timestampUnlock(dest->tsLatch);
+      timestampUnlock(src->tsLatch);
+      break;
+  }
 }
 
-int64_t timestampCmp(Timestamp *ts1, Timestamp *ts2) {
+// compare timestamps
+
+int64_t timestampCmp(Timestamp *ts1, Timestamp *ts2, char lock, char unlock) {
   int64_t comp;
 
-  if ((comp = ts2->tsBits[1] - ts1->tsBits[1])) return comp;
-  return ts2->tsBits[0] - ts1->tsBits[0];
+  switch (lock | 0x20) {
+    case 'l':
+      timestampLock(ts1->tsLatch);
+      break;
+
+    case 'r':
+      timestampLock(ts2->tsLatch);
+      break;
+
+    case 'b':
+      timestampLock(ts1->tsLatch);
+      timestampLock(ts2->tsLatch);
+      break;
+  }
+  comp = ts2->tsBits[1] - ts1->tsBits[1];
+
+  if(!comp)
+    comp = ts2->tsBits[0] - ts1->tsBits[0];
+
+  switch (unlock | 0x20) {
+    case 'l':
+        timestampUnlock(ts1->tsLatch);
+        break;
+
+    case 'r':
+        timestampUnlock(ts2->tsLatch);
+        break;
+
+    case 'b':
+        timestampUnlock(ts1->tsLatch);
+        timestampUnlock(ts2->tsLatch);
+        break;
+    }
+    return comp;
 }

@@ -76,8 +76,11 @@ typedef enum {
 typedef union {
   uint64_t tsBits[2];
   struct {
-    uint16_t tsIdx;
-    uint16_t tsCmd;
+    union {
+      uint8_t tsCmd;
+      uint8_t tsLatch[1];
+      uint32_t tsFiller[1];
+    };
     uint32_t tsSeqCnt;
     time_t tsEpoch;
   };
@@ -91,13 +94,13 @@ typedef union {
 
 //  API
 
-void timestampInstall(Timestamp *dest, Timestamp *src);
-int64_t timestampCmp(Timestamp * ts1, Timestamp * ts2);
+void timestampInstall(Timestamp *dest, Timestamp *src, char lock, char unlock);
+int64_t timestampCmp(Timestamp * ts1, Timestamp * ts2, char lock, char unlock);
 uint64_t timestampInit(Timestamp *tsArray, int tsMaxClients);
 uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
 void timestampQuit(Timestamp *tsArray, uint16_t idx);
 void timestampNext(Timestamp *tsArray, uint16_t idx);
-void timestampCAS(Timestamp *dest, Timestamp *src, int chk);
+void timestampCAS(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock);
 
 //	intrinsic atomic machine code
 
