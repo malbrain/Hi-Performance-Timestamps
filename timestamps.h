@@ -1,7 +1,7 @@
 #ifndef _TIMESTAMPS_H_
 #define _TIMESTAMPS_H_
 
-#define _POSIX_C_SOURCE 199309L
+// #define _POSIX_C_SOURCE 199309L
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -74,7 +74,11 @@ typedef enum {
 } TSCmd;
 
 typedef union {
+#ifndef _WIN32
+  __int128 tsBits[1];
+#else
   uint64_t tsBits[2];
+#endif
   struct {
     union {
       uint8_t tsCmd;
@@ -84,9 +88,6 @@ typedef union {
     uint32_t tsSeqCnt;
     time_t tsEpoch;
   };
-#ifndef _WIN32
-  __int128 tsBits128[1];
-#endif
 #ifdef ALIGN
   uint8_t filler[64];
 #endif
@@ -100,7 +101,7 @@ uint64_t timestampInit(Timestamp *tsArray, int tsMaxClients);
 uint16_t timestampClnt(Timestamp *tsArray, int tsMaxClients);
 void timestampQuit(Timestamp *tsArray, uint16_t idx);
 void timestampNext(Timestamp *tsArray, uint16_t idx);
-void timestampCAS(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock);
+void timestampCAX(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock);
 
 //	intrinsic atomic machine code
 

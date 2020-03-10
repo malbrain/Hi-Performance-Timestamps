@@ -61,6 +61,19 @@ static bool atomicCAS64(volatile uint64_t *dest, uint64_t *comp, uint64_t *value
 }
 #endif
 
+//	atomic install checked 8 bit value
+
+static bool atomicCAS8(volatile uint8_t *dest, uint8_t *comp,
+                        uint8_t *value) {
+#ifdef _WIN32
+  return _InterlockedCompareExchange8(dest, *value, *comp) == *comp;
+}
+#else
+  return __atomic_compare_exchange(dest, comp, value, false, __ATOMIC_RELEASE,
+                                   __ATOMIC_RELAXED);
+}
+#endif
+
 //	atomic install checked 16 bit value
 
 static bool atomicCAS16(volatile uint16_t *dest, uint16_t *comp, uint16_t *value) {
@@ -304,7 +317,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
 //	install new timestamp if > (or <) existing value
 
-void timestampCAS(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock) {
+void timestampCAX(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock) {
   Timestamp cmp[1];
 
     switch (lock | 0x20) {
@@ -338,7 +351,7 @@ void timestampCAS(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock
 #ifdef _WIN32
   } while (!_InterlockedCompareExchange128 (dest->tsBits, src->tsBits[1], src->tsBits[0], cmp->tsBits));
 #else
-  } while (!__atomic_compare_exchange(dest->tsBits128, cmp->tsBits128, src->tsBits128, false,
+  } while (!__atomic_compare_exchange(dest->tsBits, cmp->tsBits, src->tsBits, false,
                                       __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE));
 #endif
   switch (unlock | 0x20) {
@@ -374,7 +387,7 @@ void timestampInstall(Timestamp *dest, Timestamp *src, char lock, char unlock) {
   dest->tsBits[1] = src->tsBits[1];
   dest->tsBits[0] = src->tsBits[0];
 #else
-  dest->tsBits128[0] = src->tsBits128[0];
+  dest->tsBits[0] = src->tsBits[0];
 #endif
   switch (unlock | 0x20) {
     case 'd':
