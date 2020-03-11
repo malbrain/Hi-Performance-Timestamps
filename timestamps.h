@@ -88,6 +88,7 @@ typedef union {
     uint32_t tsSeqCnt;
     time_t tsEpoch;
   };
+  uint64_t lowHi[2];
 #ifdef ALIGN
   uint8_t filler[64];
 #endif
