@@ -198,8 +198,8 @@ void timestampQuit(Timestamp *tsBase, uint16_t idx) {
 void timestampNext(Timestamp *tsBase, uint16_t idx) {
   Timestamp prev[1];
 
-  prev[0].tsBits[0] = tsBase[idx].tsBits[0];
-  prev[0].tsBits[1] = tsBase[idx].tsBits[1];
+  prev[0].lowHi[0] = tsBase[idx].lowHi[0];
+  prev[0].lowHi[1] = tsBase[idx].lowHi[1];
 #ifdef CLOCK
   struct timespec spec[1];
   do {
@@ -311,7 +311,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
   return;
 #endif
 #if defined(ATOMIC) || defined(ALIGN)
-  tsBase[idx].tsBits[0] = atomicINC64(tsBase->tsBits);
+  tsBase[idx].lowHi[0] = atomicINC64(tsBase->lowHi);
 #endif
 }
 
@@ -333,19 +333,18 @@ void timestampCAX(Timestamp *dest, Timestamp *src, int chk, int lock, int unlock
       break;
   }
   do {
-    cmp->tsBits[0] = dest->tsBits[0] & ~1ULL;
-    cmp->tsBits[1] = dest->tsBits[1];
+    cmp->lowHi[0] = dest->lowHi[0] & ~1ULL;
+    cmp->lowHi[1] = dest->lowHi[1];
 
-    if (chk
-        < 0 ) {
-        if( cmp->tsBits[1] > src->tsBits[1]) break;
-      if (cmp->tsBits[1] == src->tsBits[1] && cmp->tsBits[0] > src->tsBits[0])
+    if (chk < 0 ) {
+      if( cmp->lowHi[1] > src->lowHi[1]) break;
+      if (cmp->lowHi[1] == src->lowHi[1] && cmp->lowHi[0] > src->lowHi[0])
         break;
     }
 
     if (chk > 0 ) {
-        if( cmp->tsBits[1] < src->tsBits[1]) break;
-        if( cmp->tsBits[1] == src->tsBits[1] &&  cmp->tsBits[0] < src->tsBits[0]) break;
+        if( cmp->lowHi[1] < src->lowHi[1]) break;
+        if( cmp->lowHi[1] == src->lowHi[1] &&  cmp->lowHi[0] < src->lowHi[0]) break;
     }
 
 #ifdef _WIN32
@@ -422,10 +421,10 @@ int64_t timestampCmp(Timestamp *ts1, Timestamp *ts2, char lock, char unlock) {
       timestampLock(ts2->tsLatch);
       break;
   }
-  comp = ts2->tsBits[1] - ts1->tsBits[1];
+  comp = ts2->lowHi[1] - ts1->lowHi[1];
 
   if(!comp)
-    comp = ts2->tsBits[0] - ts1->tsBits[0];
+    comp = ts2->lowHi[0] - ts1->lowHi[0];
 
   switch (unlock | 0x20) {
     case 'l':
