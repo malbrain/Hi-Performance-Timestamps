@@ -81,9 +81,11 @@ typedef union {
 #endif
   struct {
     union {
-      uint8_t tsCmd;
-      uint8_t tsLatch[1];
-      uint32_t tsFiller[1];
+        struct {
+            uint8_t tsCmd;
+            uint8_t tsLatch[1];
+        };
+        uint32_t tsFiller[1];
     };
     uint32_t tsSeqCnt;
     time_t tsEpoch;
