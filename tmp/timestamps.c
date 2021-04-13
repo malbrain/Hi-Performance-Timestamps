@@ -169,7 +169,6 @@ int idx;
 
   return rdtscUnits;
 #endif
-  return 1;
 }
 
 //  Client request for tsBase slot
@@ -208,6 +207,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
     tsBase[idx].tsEpoch = spec->tv_sec;
     tsBase[idx].tsSeqCnt = spec->tv_nsec;
+    tsBase[idx].tsIdx = idx;
 
   } while (timestampCmp(prev, tsBase + idx, 0, 0) == 0);
 
