@@ -32,16 +32,16 @@ unsigned __stdcall clientGo(void *arg) {
 TsArgs *args = arg;
 uint64_t idx, dups = 0, count = 0, skipped = 0;;
 uint16_t slot = timestampClnt(tsVector, maxTS);
-Timestamp prev[1] = {0, 0};
+Timestamp prev[1] = {0};
 
 printf("Begin client %d\n", args->idx);
 
 for (idx = 0; idx < args->count; idx++) {
   timestampNext(tsVector, slot);
 
-  if (timestampCmp(tsVector + slot, prev) < 0)
+  if (timestampCmp(tsVector + slot, prev, 0, 0) < 0)
     count++;
-  else if (timestampCmp(tsVector + slot, prev) == 0)
+  else if (timestampCmp(tsVector + slot, prev, 0, 0) == 0)
     dups++;
   else
     skipped++;

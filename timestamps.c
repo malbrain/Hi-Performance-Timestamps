@@ -17,7 +17,7 @@
 //  store the initialization values
 
 uint64_t rdtscEpochs = 0;
-extern bool debug;
+bool debug;
 
 void timestampLock(uint8_t *latch) {
 #ifndef _WIN32
@@ -209,7 +209,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
     tsBase[idx].tsSeqCnt = spec->tv_nsec;
     tsBase[idx].tsIdx = idx;
 
-  } while (timestampCmp(prev, tsBase + idx) == 0);
+  } while (timestampCmp(prev, tsBase + idx, 0, 0) == 0);
 
   return;
 #endif
@@ -300,7 +300,7 @@ void timestampNext(Timestamp *tsBase, uint16_t idx) {
 
       //  Release new Epoch via atomicCAS128
 
-      atomicCAS128(rdtscEpoch, oldEpoch, newEpoch);
+      atomicCASEpoch(rdtscEpoch, oldEpoch, newEpoch);
     } while (true);
 #endif
     // emit assigned Timestamp.

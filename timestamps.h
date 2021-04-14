@@ -1,7 +1,7 @@
 #ifndef _TIMESTAMPS_H_
 #define _TIMESTAMPS_H_
 
-// #define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 199309L
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -19,6 +19,7 @@
 
 #define	 aligned_malloc _aligned_malloc
 #else
+#include <unistd.h>
 #include <x86intrin.h>
 #include <pthread.h>
 #include <sched.h>
