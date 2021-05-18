@@ -1,10 +1,7 @@
 #ifndef _TIMESTAMPS_H_
 #define _TIMESTAMPS_H_
 
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 199309L
-#endif
-
+#include <features.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
