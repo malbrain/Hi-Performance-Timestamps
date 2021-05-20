@@ -1,7 +1,6 @@
 #ifndef _TIMESTAMPS_H_
 #define _TIMESTAMPS_H_
 
-#include <features.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -18,6 +17,7 @@
 
 #define	 aligned_malloc _aligned_malloc
 #else
+#include <features.h>
 #include <unistd.h>
 #include <x86intrin.h>
 #include <pthread.h>
